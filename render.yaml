@@ -1,0 +1,67 @@
+services:
+  # 1. FastAPI Core API
+  - type: web
+    name: counter-api
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: counter-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: counter-redis
+          property: connectionString
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+
+  # 2. Background Worker (Sweeps & Webhooks)
+  - type: worker
+    name: counter-worker
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m apps.worker.worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: counter-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: counter-redis
+          property: connectionString
+
+  # 3. Next.js 15 Web Application
+  - type: web
+    name: counter-web
+    env: node
+    region: oregon
+    plan: standard
+    rootDir: apps/web
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: counter-api
+          property: host
+
+databases:
+  - name: counter-db
+    databaseName: counter
+    user: counter
+    region: oregon
+    plan: standard

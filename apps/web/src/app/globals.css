@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import 'ag-grid-community/styles/ag-grid.css';
+@import 'ag-grid-community/styles/ag-theme-alpine.css';
+
+:root {
+  --background: #faf8f5;
+  --foreground: #1c1917;
+  --terracotta: #cc4422;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Custom row flash animation when order transitions to CAPTURED / PAID */
+@keyframes paid-flash {
+  0% { background-color: rgba(34, 197, 94, 0.35); }
+  100% { background-color: transparent; }
+}
+
+.row-flash-paid {
+  animation: paid-flash 2.5s ease-out;
+}
+
+/* Custom AG Grid Dark/Light theme overrides */
+.ag-theme-alpine {
+  --ag-header-background-color: #f4f0e8;
+  --ag-header-foreground-color: #44403c;
+  --ag-border-color: #e7e5e4;
+  --ag-row-hover-color: #fdfbf7;
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+}
+
+.ag-theme-alpine-dark {
+  --ag-header-background-color: #1c1917;
+  --ag-header-foreground-color: #d6d3d1;
+  --ag-border-color: #292524;
+  --ag-background-color: #0c0a09;
+  --ag-row-hover-color: #292524;
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+}
