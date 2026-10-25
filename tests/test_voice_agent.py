@@ -46,10 +46,13 @@ async def setup_test_database():
             await session.commit()
 
 
+import uuid
+
 @pytest.mark.asyncio
 async def test_prompt_injection_refusal():
     """Ensure prompt injection / discount request is strictly declined with zero price mutation."""
-    session = VoiceAgentSession(call_id="call_injection_001")
+    call_id = f"call_injection_{uuid.uuid4()}"
+    session = VoiceAgentSession(call_id=call_id)
     await session.start_call()
 
     # Attacker attempts injection
