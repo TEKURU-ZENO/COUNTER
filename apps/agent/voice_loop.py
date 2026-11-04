@@ -46,6 +46,7 @@ class VoiceAgentSession:
         self.turn_sequence = 0
         self.is_waiting_for_payment = False
         self.payment_confirmed = False
+        self.has_saved_mandate = False
 
     async def start_call(self) -> str:
         """Initialize call in database and return initial greeting."""
@@ -57,9 +58,20 @@ class VoiceAgentSession:
                 channel="web",
             )
             session.add(call)
+
+            # Check if caller has saved PayPal wallet (Vault Mandate) in same session
+            from apps.api.db.repository import OrderRepository
+            repo = OrderRepository(session)
+            mandate = await repo.get_active_mandate(customer_hash=self.caller_phone, shop_id=self.shop_id)
+            self.has_saved_mandate = mandate is not None
+
             await session.commit()
 
-        greeting = "Thanks for calling Luigi's Artisan Pizza! What can I get started for you today?"
+        if self.has_saved_mandate:
+            greeting = "Welcome back to Luigi's Artisan Pizza! What can I get started for you today?"
+        else:
+            greeting = "Thanks for calling Luigi's Artisan Pizza! What can I get started for you today?"
+
         await self.record_turn("agent", greeting, latency_ms=180)
         return greeting
 
@@ -129,16 +141,36 @@ class VoiceAgentSession:
                 resp = f"I'm sorry, {quote['error']}"
             else:
                 self.last_quote_hash = quote["quote_hash"]
-                resp = f"{quote['spoken_summary']} Shall I send the PayPal payment link so we can get that in the oven for you?"
+                if self.has_saved_mandate:
+                    resp = f"{quote['spoken_summary']} Same as last time? Shall I charge ${quote['total_cents'] / 100:.2f} directly to your saved PayPal on file?"
+                else:
+                    resp = f"{quote['spoken_summary']} Shall I send the PayPal payment link so we can get that in the oven for you?"
 
             latency = int((time.time() - t0) * 1000)
             await self.record_turn("agent", resp, latency_ms=latency)
             return {"speech": resp, "quote": quote, "latency_ms": latency}
 
-        # Yes / Send link
-        if "yes" in u or "send" in u or "pay" in u or "sure" in u:
+        # Yes / Send link or Charge saved PayPal
+        if "yes" in u or "send" in u or "pay" in u or "sure" in u or "charge" in u:
             if not self.last_quote_hash or not self.current_order_id:
                 resp = "Let's put your order together first. What items would you like?"
+            elif self.has_saved_mandate:
+                # Voice-confirmed direct charge via PayPal Vault
+                charge_res = await self.tools.charge_saved_payment(
+                    order_id=self.current_order_id,
+                    quote_hash=self.last_quote_hash,
+                    caller_phone=self.caller_phone,
+                    spoken_consent_recorded=True,
+                    call_id=self.call_id,
+                )
+                if charge_res.get("fallback_to_link"):
+                    resp = charge_res.get("spoken_explanation", "Let me send a payment link instead.")
+                    self.has_saved_mandate = False
+                    link_res = await self.tools.send_payment_link(self.current_order_id, self.last_quote_hash, call_id=self.call_id)
+                    self.is_waiting_for_payment = True
+                else:
+                    self.payment_confirmed = True
+                    resp = charge_res["spoken_confirmation"]
             else:
                 link_res = await self.tools.send_payment_link(
                     self.current_order_id,

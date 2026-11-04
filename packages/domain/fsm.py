@@ -43,6 +43,11 @@ TRANSITION_TABLE: dict[OrderAction, TransitionRule] = {
         to_state=OrderState.LINK_SENT,
         side_effects="paypal_order_created",
     ),
+    OrderAction.CHARGE_SAVED_PAYMENT: TransitionRule(
+        allowed_from_states=frozenset({OrderState.QUOTED}),
+        to_state=OrderState.CAPTURED,
+        side_effects="paypal_vault_capture_executed",
+    ),
     OrderAction.APPROVE: TransitionRule(
         allowed_from_states=frozenset({OrderState.LINK_SENT}),
         to_state=OrderState.APPROVED,

@@ -198,6 +198,20 @@ class WebhookEventModel(Base):
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class VaultMandateModel(Base):
+    __tablename__ = "vault_mandates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=generate_uuid)
+    vault_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    customer_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    shop_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    max_charge_cents: Mapped[int] = mapped_column(Integer, default=10000)  # $100.00 spending cap
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")  # ACTIVE, REVOKED
+    revoke_token: Mapped[str] = mapped_column(String(128), default=generate_uuid, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class InvoiceModel(Base):
     __tablename__ = "invoices"
 

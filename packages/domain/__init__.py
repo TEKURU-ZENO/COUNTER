@@ -25,6 +25,7 @@ from packages.domain.models import (
     Quote,
     QuoteLine,
     ShopPolicy,
+    VaultMandate,
 )
 from packages.domain.pricing import (
     MenuItemNotFoundError,
@@ -56,6 +57,7 @@ __all__ = [
     "REFUND_TRANSITIONS",
     "ShopPolicy",
     "TRANSITION_TABLE",
+    "VaultMandate",
     "calculate_quote",
     "can_transition",
     "compute_quote_hash",

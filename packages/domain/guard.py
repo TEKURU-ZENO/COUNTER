@@ -119,6 +119,87 @@ class Guard:
             target_state=OrderState.LINK_SENT,
         )
 
+    def evaluate_charge_saved_payment(
+        self,
+        current_state: OrderState,
+        provided_quote_hash: str,
+        current_quote: Quote,
+        mandate: Optional[VaultMandate],
+        spoken_consent_recorded: bool,
+        shop_open: bool = True,
+        slot_available: bool = True,
+    ) -> GuardDecision:
+        """
+        Evaluate eligibility for voice-confirmed charging of a vaulted PayPal wallet.
+        Enforces strict authorization ceiling, matching shop, valid quote hash,
+        and immutable audit record of spoken consent.
+        """
+        if not shop_open:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="Shop is currently closed for incoming orders",
+                allowed=False,
+            )
+
+        if not slot_available:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="Requested pickup slot is fully booked at kitchen capacity",
+                allowed=False,
+            )
+
+        if not can_transition(current_state, OrderAction.CHARGE_SAVED_PAYMENT):
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason=f"Cannot charge saved payment from order state '{current_state.value}' (must be in QUOTED state)",
+                allowed=False,
+            )
+
+        if not mandate or mandate.status != "ACTIVE":
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="No active PayPal vault mandate found for this customer. Fallback to payment link required.",
+                allowed=False,
+            )
+
+        if mandate.shop_id != current_quote.shop_id:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="Vault mandate is restricted to another restaurant and cannot be charged here",
+                allowed=False,
+            )
+
+        if current_quote.total_cents > mandate.max_charge_cents:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason=f"Order total of {current_quote.total_cents} cents exceeds customer's authorized vault mandate cap of {mandate.max_charge_cents} cents. Fallback to payment link required.",
+                allowed=False,
+                metadata={"mandate_cap_cents": mandate.max_charge_cents, "order_total_cents": current_quote.total_cents},
+            )
+
+        if provided_quote_hash != current_quote.quote_hash:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="Quote hash mismatch: cart was modified after spoken readback. Re-quote required.",
+                allowed=False,
+            )
+
+        if not spoken_consent_recorded:
+            return GuardDecision(
+                kind=GuardDecisionKind.DENY,
+                reason="Voice consent not verified. Caller must verbally confirm charge before charging saved PayPal.",
+                allowed=False,
+            )
+
+        return GuardDecision(
+            kind=GuardDecisionKind.ALLOW,
+            reason=f"Voice-confirmed vault charge of {current_quote.total_cents} cents authorized under mandate {mandate.id}",
+            allowed=True,
+            computed_amount_cents=current_quote.total_cents,
+            target_state=OrderState.CAPTURED,
+            metadata={"vault_id": mandate.vault_id, "mandate_id": mandate.id},
+        )
+
     def evaluate_refund(
         self,
         current_state: OrderState,

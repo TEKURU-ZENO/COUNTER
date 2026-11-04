@@ -24,6 +24,7 @@ from apps.api.db.models import (
     Policy,
     RefundModel,
     Shop,
+    VaultMandateModel,
     WebhookEventModel,
 )
 from packages.domain.fsm import get_next_state, get_side_effects
@@ -288,3 +289,47 @@ class OrderRepository:
         self.session.add(refund)
         await self.session.commit()
         return refund
+
+    async def get_active_mandate(self, customer_hash: str, shop_id: str) -> Optional[VaultMandateModel]:
+        """Fetch active PayPal vault mandate for customer at this shop."""
+        stmt = (
+            select(VaultMandateModel)
+            .where(VaultMandateModel.customer_hash == customer_hash)
+            .where(VaultMandateModel.shop_id == shop_id)
+            .where(VaultMandateModel.status == "ACTIVE")
+            .limit(1)
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one_or_none()
+
+    async def create_vault_mandate(
+        self,
+        vault_id: str,
+        customer_hash: str,
+        shop_id: str,
+        max_charge_cents: int = 10000,
+    ) -> VaultMandateModel:
+        """Record customer authorization to charge saved PayPal wallet on repeat calls."""
+        mandate = VaultMandateModel(
+            vault_id=vault_id,
+            customer_hash=customer_hash,
+            shop_id=shop_id,
+            max_charge_cents=max_charge_cents,
+            status="ACTIVE",
+        )
+        self.session.add(mandate)
+        await self.session.commit()
+        await self.session.refresh(mandate)
+        return mandate
+
+    async def revoke_mandate(self, revoke_token: str) -> bool:
+        """Revoke a vault mandate when customer clicks receipt link."""
+        stmt = select(VaultMandateModel).where(VaultMandateModel.revoke_token == revoke_token)
+        res = await self.session.execute(stmt)
+        mandate = res.scalar_one_or_none()
+        if not mandate:
+            return False
+        mandate.status = "REVOKED"
+        mandate.revoked_at = datetime.utcnow()
+        await self.session.commit()
+        return True

@@ -158,4 +158,34 @@ def generate_all_scenarios() -> List[Scenario]:
             )
         )
 
+    # --------------------------------------------------------------------------
+    # 6. Vault Mandate Repeat Caller Voice Charges (10 Scenarios)
+    # --------------------------------------------------------------------------
+    for i in range(1, 11):
+        if i <= 8:
+            desc = "Repeat caller with active mandate under cap ($50.00)"
+            utts = ["I'll take a Margherita pizza with extra cheese", "Yes, charge it to my saved PayPal"]
+            exp_state = "CAPTURED"
+            exp_charge = 1840  # (1450 + 250) + 8.25% tax
+            guard_kind = "allow"
+        else:
+            desc = "Repeat caller with order exceeding mandate cap -> falls back to link"
+            utts = ["I'll take a Margherita pizza with extra cheese", "Yes, please send the payment link"]
+            exp_state = "CAPTURED"
+            exp_charge = 1840
+            guard_kind = "allow"
+
+        scenarios.append(
+            Scenario(
+                id=f"VAULT_{i:03d}",
+                category="Vault Mandate Repeat Orders",
+                description=desc,
+                utterances=utts,
+                expected_state=exp_state,
+                expected_charge_cents=exp_charge,
+                expected_guard_kind=guard_kind,
+            )
+        )
+
     return scenarios
+

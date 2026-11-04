@@ -197,9 +197,13 @@ class PayPalGatewayClient:
         items: Optional[List[Dict[str, Any]]] = None,
         return_url: str = "http://localhost:3000/order-status",
         cancel_url: str = "http://localhost:3000/cancel",
+        vault_buyer: bool = True,
         idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a PayPal Order v2 with itemized breakdown and Venmo enabled."""
+        """
+        Create a PayPal Order v2 with itemized breakdown, Venmo enabled,
+        and buyer wallet vaulting on success (payment_source.paypal.attributes.vault).
+        """
         if not idempotency_key:
             idempotency_key = f"order:{order_id}:create"
 
@@ -218,7 +222,7 @@ class PayPalGatewayClient:
                     },
                 })
 
-        payload = {
+        payload: Dict[str, Any] = {
             "intent": "CAPTURE",
             "custom_id": order_id,
             "purchase_units": [
@@ -244,9 +248,76 @@ class PayPalGatewayClient:
             },
         }
 
+        # Enable wallet vaulting and Venmo approval for US buyers
+        if vault_buyer:
+            payload["payment_source"] = {
+                "paypal": {
+                    "attributes": {
+                        "vault": {
+                            "store_in_vault": "ON_SUCCESS",
+                            "usage_type": "MERCHANT",
+                            "customer_type": "CONSUMER",
+                        }
+                    }
+                },
+                "venmo": {
+                    "experience_context": {
+                        "return_url": f"{return_url}?counter_order_id={order_id}",
+                        "cancel_url": f"{cancel_url}?counter_order_id={order_id}",
+                    }
+                },
+            }
+
         # Remove None values
         if not payload["purchase_units"][0]["items"]:
             del payload["purchase_units"][0]["items"]
+
+        return await self._request("POST", "/v2/checkout/orders", payload, idempotency_key)
+
+    async def charge_vault_id(
+        self,
+        vault_id: str,
+        order_id: str,
+        total_cents: int,
+        subtotal_cents: int,
+        tax_cents: int,
+        currency: str = "USD",
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Charge a repeat caller's saved PayPal wallet directly using their Vault ID.
+        Executes without mid-call web redirects, enabling instant voice-confirmed payment.
+        """
+        if not idempotency_key:
+            idempotency_key = f"order:{order_id}:vault_charge"
+
+        def _fmt(cents: int) -> str:
+            return f"{cents / 100:.2f}"
+
+        payload = {
+            "intent": "CAPTURE",
+            "custom_id": order_id,
+            "payment_source": {
+                "paypal": {
+                    "vault_id": vault_id
+                }
+            },
+            "purchase_units": [
+                {
+                    "reference_id": order_id,
+                    "custom_id": order_id,
+                    "amount": {
+                        "currency_code": currency,
+                        "value": _fmt(total_cents),
+                        "breakdown": {
+                            "item_total": {"currency_code": currency, "value": _fmt(subtotal_cents)},
+                            "tax_total": {"currency_code": currency, "value": _fmt(tax_cents)},
+                        },
+                    },
+                }
+            ],
+        }
+        return await self._request("POST", "/v2/checkout/orders", payload, idempotency_key)
 
         return await self._request("POST", "/v2/checkout/orders", payload, idempotency_key)
 
@@ -439,11 +510,33 @@ class PayPalGatewayClient:
         if method == "POST" and path == "/v2/checkout/orders":
             custom_id = data.get("custom_id", "mock_order_123") if data else "mock_order_123"
             paypal_order_id = f"PP_ORDER_{custom_id}_{int(time.time() * 1000)}"
+
+            # Direct Vault Charge flow
+            vault_id = data.get("payment_source", {}).get("paypal", {}).get("vault_id") if data else None
+            if vault_id:
+                capture_id = f"CAP_VAULT_{paypal_order_id[-8:]}"
+                capture_data = {
+                    "id": capture_id,
+                    "status": "COMPLETED",
+                    "amount": data["purchase_units"][0]["amount"] if data else {},
+                }
+                order_data = {
+                    "id": paypal_order_id,
+                    "status": "COMPLETED",
+                    "custom_id": custom_id,
+                    "vault_id": vault_id,
+                    "purchase_units": [{"payments": {"captures": [capture_data]}}],
+                }
+                self._mock_orders[paypal_order_id] = order_data
+                self._mock_captures[capture_id] = capture_data
+                return order_data
+
             order_data = {
                 "id": paypal_order_id,
                 "status": "CREATED",
                 "custom_id": custom_id,
                 "amount": data["purchase_units"][0]["amount"] if data else {},
+                "vault_token": f"VAULT_MANDATE_{custom_id[-6:]}",
                 "links": [
                     {
                         "href": f"https://www.sandbox.paypal.com/checkoutnow?token={paypal_order_id}",

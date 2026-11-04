@@ -31,6 +31,7 @@ class OrderState(str, Enum):
 class OrderAction(str, Enum):
     QUOTE = "quote"
     SEND_LINK = "send_link"
+    CHARGE_SAVED_PAYMENT = "charge_saved_payment"
     APPROVE = "approve"
     CAPTURE = "capture"
     KITCHEN_ACCEPT = "kitchen_accept"
@@ -104,6 +105,22 @@ class ShopPolicy:
     max_order_value_cents: int = 50000  # $500.00
     refund_approval_threshold_cents: int = 2500  # $25.00
     catering_threshold_cents: int = 20000  # $200.00
+
+
+@dataclass(frozen=True)
+class VaultMandate:
+    """
+    Customer authorization to charge saved PayPal wallet on repeat phone calls.
+    Restricted to this restaurant only, with strict per-order spending ceiling.
+    """
+    id: str
+    vault_id: str
+    customer_hash: str
+    shop_id: str
+    max_charge_cents: int = 10000  # $100.00 default cap
+    status: str = "ACTIVE"  # "ACTIVE", "REVOKED"
+    revoke_token: str = ""
+    created_at_iso: str = ""
 
 
 @dataclass(frozen=True)

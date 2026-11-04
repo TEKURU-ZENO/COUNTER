@@ -17,16 +17,22 @@ export default function DemoPage() {
   const [isWaitingPayment, setIsWaitingPayment] = useState(false);
   const [guardBadge, setGuardBadge] = useState<string>("GUARD READY");
   const [userInput, setUserInput] = useState("");
+  const [isRepeatCaller, setIsRepeatCaller] = useState(false);
+  const [vaultCharged, setVaultCharged] = useState(false);
 
-  const startCall = () => {
+  const startCall = (repeat: boolean = false) => {
     setCallActive(true);
+    setIsRepeatCaller(repeat);
+    setVaultCharged(false);
     setOrderState("CALL_CONNECTED");
     setApprovalUrl(null);
     setIsWaitingPayment(false);
     setTurns([
       {
         speaker: "agent",
-        text: "Thanks for calling Luigi's Artisan Pizza! What can I get started for you today?",
+        text: repeat
+          ? "Welcome back to Luigi's Artisan Pizza! What can I get started for you today?"
+          : "Thanks for calling Luigi's Artisan Pizza! What can I get started for you today?",
         latencyMs: 180,
       },
     ]);
@@ -60,28 +66,45 @@ export default function DemoPage() {
       } else if (lower.includes("margherita") || lower.includes("pizza")) {
         setGuardBadge("ALLOW: QUOTE_CALCULATED");
         setOrderState("QUOTED");
+        const replyText = isRepeatCaller
+          ? "You have 1 Margherita Wood-Fired Pizza with Extra Buffalo Mozzarella ($18.40). Same as last time? Shall I charge $18.40 directly to your saved PayPal on file?"
+          : "You have 1 Margherita Wood-Fired Pizza with Extra Buffalo Mozzarella. The subtotal is $17.00, plus $1.40 tax, bringing your total to $18.40. Shall I send the PayPal payment link so we can get that in the oven for you?";
         setTurns([
           ...newTurns,
           {
             speaker: "agent",
-            text: "You have 1 Margherita Wood-Fired Pizza with Extra Buffalo Mozzarella. The subtotal is $17.00, plus $1.40 tax, bringing your total to $18.40. Shall I send the PayPal payment link so we can get that in the oven for you?",
+            text: replyText,
             latencyMs: 245,
           },
         ]);
-      } else if (lower.includes("yes") || lower.includes("send") || lower.includes("pay")) {
-        setGuardBadge("ALLOW: QUOTE_HASH_VERIFIED");
-        setOrderState("LINK_SENT");
-        setIsWaitingPayment(true);
-        const url = "https://www.sandbox.paypal.com/checkoutnow?token=PP_ORDER_DEMO_998";
-        setApprovalUrl(url);
-        setTurns([
-          ...newTurns,
-          {
-            speaker: "agent",
-            text: "I've sent the payment link to your screen and phone. You can pay via PayPal, Venmo, or card. I'll hold on the line until it confirms.",
-            latencyMs: 290,
-          },
-        ]);
+      } else if (lower.includes("yes") || lower.includes("send") || lower.includes("pay") || lower.includes("charge")) {
+        if (isRepeatCaller) {
+          setGuardBadge("ALLOW: VAULT_MANDATE_CHARGED");
+          setOrderState("CAPTURED");
+          setVaultCharged(true);
+          setTurns([
+            ...newTurns,
+            {
+              speaker: "agent",
+              text: "Done! We've charged $18.40 to your saved PayPal wallet (Vault Token #998) within your pre-approved limit. Your ticket is printing in the kitchen right now, ready at 7:15 PM!",
+              latencyMs: 195,
+            },
+          ]);
+        } else {
+          setGuardBadge("ALLOW: QUOTE_HASH_VERIFIED");
+          setOrderState("LINK_SENT");
+          setIsWaitingPayment(true);
+          const url = "https://www.sandbox.paypal.com/checkoutnow?token=PP_ORDER_DEMO_998";
+          setApprovalUrl(url);
+          setTurns([
+            ...newTurns,
+            {
+              speaker: "agent",
+              text: "I've sent the payment link to your screen and phone. You can pay via PayPal, Venmo, or card. I'll hold on the line until it confirms.",
+              latencyMs: 290,
+            },
+          ]);
+        }
       } else if (lower.includes("cancel")) {
         setGuardBadge("ALLOW: POLICY_REFUND_FULL");
         setOrderState("REFUNDED_FULL");
@@ -171,7 +194,7 @@ export default function DemoPage() {
                     </p>
                   </div>
                   <button
-                    onClick={startCall}
+                    onClick={() => startCall(false)}
                     className="inline-flex items-center space-x-2 px-6 py-3 rounded-xl bg-terracotta-600 hover:bg-terracotta-700 text-white font-medium text-sm shadow-md shadow-terracotta-600/30 transition-all transform hover:-translate-y-0.5"
                   >
                     <Phone className="w-4 h-4" />
@@ -264,7 +287,20 @@ export default function DemoPage() {
               </span>
             </div>
 
-            {approvalUrl ? (
+            {vaultCharged ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center space-x-2 text-emerald-800 font-bold text-xs uppercase">
+                  <CheckCircle className="w-4 h-4 text-emerald-600" />
+                  <span>PayPal Vault Direct Capture (Zero Link Sent)</span>
+                </div>
+                <div className="text-xs text-stone-700 space-y-1">
+                  <div>Vault Token: <span className="font-mono font-bold text-stone-900">vault_paypal_token_cust_99</span></div>
+                  <div>Mandate Limit: <span className="font-mono text-emerald-700 font-bold">$50.00 / order</span></div>
+                  <div>Spoken Consent: <span className="text-emerald-700 font-semibold">Verified on Call</span></div>
+                  <div>Status: <span className="text-stone-900 font-bold font-mono">Orders v2 CAPTURED ($18.40)</span></div>
+                </div>
+              </div>
+            ) : approvalUrl ? (
               <div className="space-y-4">
                 <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 flex items-center space-x-4">
                   <div className="w-20 h-20 bg-white border border-stone-200 rounded-lg p-1.5 flex items-center justify-center shadow-sm">
@@ -313,7 +349,7 @@ export default function DemoPage() {
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 onClick={() => {
-                  if (!callActive) startCall();
+                  if (!callActive) startCall(false);
                   setTimeout(() => sendCallerSpeech("I'd like a Margherita pizza with extra buffalo mozzarella please"), 300);
                 }}
                 className="p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-left font-medium text-stone-800 transition"
@@ -337,6 +373,19 @@ export default function DemoPage() {
                 className="p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-left font-medium text-stone-800 transition"
               >
                 ↩️ 4. Cancel & Policy Refund
+              </button>
+              <button
+                onClick={() => {
+                  startCall(true);
+                  setTimeout(() => sendCallerSpeech("I'll take a Margherita pizza with extra buffalo mozzarella"), 400);
+                }}
+                className="col-span-2 p-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-left font-medium text-emerald-900 transition flex items-center justify-between"
+              >
+                <div>
+                  <div className="font-bold">⚡ 5. Saved PayPal Repeat Order (Vault Mandate)</div>
+                  <div className="text-[11px] text-emerald-700 font-normal">Voice-confirmed direct capture to vaulted wallet — zero link sent.</div>
+                </div>
+                <span className="text-xs bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded font-mono font-bold">Phase 2/3</span>
               </button>
             </div>
           </div>

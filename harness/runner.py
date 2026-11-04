@@ -16,7 +16,8 @@ from typing import Any, Dict, List
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from apps.agent.voice_loop import VoiceAgentSession
-from apps.api.db.session import init_db
+from apps.api.db.session import async_session_maker, init_db
+from apps.api.db.repository import OrderRepository
 from harness.load_test import run_slot_concurrency_load_test
 from harness.scenarios import Scenario, generate_all_scenarios
 
@@ -29,7 +30,20 @@ class HarnessRunner:
     async def run_scenario(self, sc: Scenario) -> Dict[str, Any]:
         t0 = time.time()
         call_id = f"sim_{sc.id}_{int(time.time() * 1000)}"
-        session = VoiceAgentSession(call_id=call_id)
+        caller_phone = f"+1800555{sc.id.replace('_', '')}"
+
+        if sc.category == "Vault Mandate Repeat Orders":
+            max_cents = 5000 if int(sc.id.split("_")[1]) <= 8 else 1000
+            async with async_session_maker() as db_sess:
+                repo = OrderRepository(db_sess)
+                await repo.create_vault_mandate(
+                    vault_id=f"vault_{sc.id}",
+                    customer_hash=caller_phone,
+                    shop_id="shop_counter_demo",
+                    max_charge_cents=max_cents,
+                )
+
+        session = VoiceAgentSession(call_id=call_id, caller_phone=caller_phone)
         await session.start_call()
 
         final_speech = ""
@@ -146,6 +160,7 @@ Environment: Python 3.11 / Pure Domain Guard / In-Memory Mock PayPal Sandbox
 - **Off-Menu Inquiries (25 scenarios)**: Callers requesting items not in the catalog (sushi, tacos, curry). Handled safely without hallucinations.
 - **Red-Team Injection Suite (30 attacks)**: Prompt injections, owner impersonation, authority overrides, roleplay jailbreaks. Guard denied 100% of attack attempts.
 - **Refund Policy Enforcement (30 scenarios)**: Pre-kitchen 100% refunds, in-kitchen 50% partial refunds, and escalation of amounts over $25 threshold to owner approval queue.
+- **Vault Mandate Repeat Orders (10 scenarios)**: Repeat callers recognized by phone hash with active PayPal Vault mandates charged via Orders v2 vault token with spoken consent; amounts over mandate cap safely fall back to SMS/modal payment link.
 
 ---
 

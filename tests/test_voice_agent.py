@@ -21,10 +21,8 @@ from packages.paypal_gateway.client import PayPalGatewayClient
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_test_database():
-    """Initialize database tables and seed sample menu for voice tests."""
-    await init_db()
+    """Ensure sample menu exists for voice tests."""
     async with async_session_maker() as session:
-        # Check if pizza already exists
         pizza = await session.get(MenuItemModel, "item_pizza_margherita")
         if not pizza:
             pizza = MenuItemModel(
@@ -103,3 +101,50 @@ async def test_consecutive_voice_calls_paid_during_call(run_index: int):
     confirmed = await agent_session.wait_for_payment_confirmation(timeout_seconds=5, poll_interval=0.2)
     assert confirmed is True
     assert agent_session.payment_confirmed is True
+
+
+@pytest.mark.asyncio
+async def test_repeat_caller_voice_confirmed_vault_charge():
+    """
+    Test Phase 2/3 Vault Mandate Innovation:
+    A repeat caller with an authorized PayPal Vault Mandate places an order.
+    The agent recognizes their saved PayPal, asks to charge it, and caller says 'yes'.
+    The order is captured directly via Orders v2 vault_id without opening any link.
+    """
+    caller_phone = f"+1555{uuid.uuid4().hex[:7]}"
+    # 1. Pre-register active vault mandate for this customer
+    async with async_session_maker() as session:
+        from apps.api.db.repository import OrderRepository
+        repo = OrderRepository(session)
+        await repo.create_vault_mandate(
+            vault_id="vault_paypal_token_cust_99",
+            customer_hash=caller_phone,
+            shop_id="shop_counter_demo",
+            max_charge_cents=5000,
+        )
+
+    # 2. Caller rings in
+    call_id = f"call_repeat_vault_{uuid.uuid4()}"
+    agent_session = VoiceAgentSession(call_id=call_id, caller_phone=caller_phone)
+
+    # 3. Agent welcomes back recognized customer
+    greeting = await agent_session.start_call()
+    assert "Welcome back" in greeting
+    assert agent_session.has_saved_mandate is True
+
+    # 4. Caller orders Margherita with extra cheese
+    order_turn = await agent_session.handle_user_speech("I'll take a Margherita pizza with extra cheese")
+    assert "Same as last time?" in order_turn["speech"]
+    assert "saved PayPal" in order_turn["speech"]
+
+    # 5. Caller says 'Yes, charge it'
+    charge_turn = await agent_session.handle_user_speech("Yes, charge it to my saved PayPal")
+    assert agent_session.payment_confirmed is True
+    assert "charged" in charge_turn["speech"].lower()
+    assert "saved paypal" in charge_turn["speech"].lower()
+
+    # 6. Verify in database that order is CAPTURED immediately with zero link sent
+    async with async_session_maker() as session:
+        order = await session.get(OrderModel, agent_session.current_order_id)
+        assert order is not None
+        assert order.state == OrderState.CAPTURED.value

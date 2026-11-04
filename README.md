@@ -50,6 +50,7 @@ Core API (FastAPI)
 3. **Cryptographic Quote Hash**: `send_payment_link(quote_hash)` checks the exact hash heard by the caller. If the cart was altered, the Guard rejects the link.
 4. **Optimistic Locking**: Every order transition enforces `WHERE id=? AND version=?`. Webhook races and caller cancels never produce dirty writes.
 5. **Exact-Once Webhooks**: `webhook_events.paypal_event_id` is unique. Duplicate PayPal retries are idempotent no-ops.
+6. **Voice-Confirmed Vault Mandates**: Repeat customers can be charged directly to their vaulted PayPal wallet (`payment_source.paypal.attributes.vault`) without opening a link, guarded by a per-order price cap, quote hash verification, and recorded spoken consent.
 
 ---
 
@@ -58,6 +59,7 @@ Core API (FastAPI)
 ![State Machine](docs/state-machine.svg)
 
 - **DRAFT** ── `quote` ──► **QUOTED** ── `send_link` ──► **LINK_SENT** ── `APPROVED` ──► **CAPTURED**
+- **QUOTED** ── `charge_saved_payment` (Vault) ──► **CAPTURED** *(Instant voice confirmation for repeat callers)*
 - **CAPTURED** ── `kitchen_accept` ──► **IN_KITCHEN** ── `mark_ready` ──► **READY** ── `pickup` ──► **PICKED_UP**
 - Guard-enforced policy refunds: Full refund before kitchen (`REFUNDED_FULL`), partial refund during prep (`REFUNDED_PARTIAL`), or manual escalation for amounts above policy threshold.
 
@@ -69,18 +71,31 @@ Every number below is deterministically measured and reproduced with a single co
 
 | Metric | Measured Value | Target / Requirement | Status |
 | :--- | :---: | :---: | :---: |
-| **Total Test Scenarios** | **150** | 150+ scenarios | PASS |
+| **Total Test Scenarios** | **160** | 150+ scenarios | PASS |
 | **Wrong Charges** | **0** | **Must be 0** | **PERFECT (0)** |
 | **Policy Violations** | **0** | **Must be 0** | **PERFECT (0)** |
 | **Red-Team Injection Breaches** | **0 (0.0%)** | **Must be 0%** | **IMMUNE (0%)** |
 | **Slot Overbooking under Load** | **0** | **Must be 0** | **ZERO OVERBOOKING** |
 | **Order Intent Accuracy** | **100.0%** | > 99% | PASS |
-| **P95 Voice Turn Latency** | **92 ms** | < 800 ms | PASS |
+| **P95 Voice Turn Latency** | **64 ms** | < 800 ms | PASS |
 | **Median Link-to-Capture Time** | **1.45 s** | < 3.0 s | PASS |
 
 ---
 
-## 5. Quick Start for Judges & Developers
+## 5. PayPal API Surface & Versioning
+
+Counter adheres to official PayPal REST endpoints and versions:
+- **Orders v2** (`POST /v2/checkout/orders`, `POST /v2/checkout/orders/{id}/capture`): Order creation with wallet vaulting attributes, Venmo enablement, and direct capture.
+- **Payments v2** (`POST /v2/payments/captures/{id}/refund`, `GET /v2/payments/captures/{id}`): Deterministic policy refunds and status lookups.
+- **Invoicing v2** (`POST /v2/invoicing/invoices`, `POST /v2/invoicing/invoices/{id}/send`): Large catering deposit invoices.
+- **Catalog Products v1** (`POST /v1/catalogs/products`, `GET /v1/catalogs/products`): Automated menu item sync.
+- **Reporting & Transactions v1** (`GET /v1/reporting/transactions`): Daily settlement search for Ops Copilot.
+- **Webhook Signature Verification v1** (`POST /v1/notifications/verify-webhook-signature`): Exact-once cryptographic webhook verification.
+- **PayPal Agent Toolkit (Python)**: Official PayPal agent tooling powering natural language merchant ledger inquiries.
+
+---
+
+## 6. Quick Start for Judges & Developers
 
 ### Prerequisites
 - Python 3.11+
@@ -99,7 +114,28 @@ pip install -r requirements.txt greenlet
 # Run the complete test suite (Domain, Persistence, Chaos, and Voice)
 pytest -v
 
-# Run the 150-scenario Test Harness & Load Test
+# Run the 160-scenario Test Harness & Load Test
+python harness/runner.py
+
+# Start Core API server
+uvicorn apps.api.main:app --reload --port 8000
+```
+
+### 2. Run Next.js 15 Web Application
+```bash
+cd apps/web
+npm install --legacy-peer-deps
+npm run dev
+# Open http://localhost:3000
+```
+
+- **Live Demo Page**: `http://localhost:3000/` (Real browser call over WebRTC to Luigi's Pizza, customize toppings, pay with Sandbox Buyer Accounts or saved PayPal Vault).
+- **Merchant Console (AG Grid)**: `http://localhost:3000/console` (Live SSE order updates, Guard decision audit, Ops Copilot powered by PayPal Agent Toolkit).
+- **Kitchen Screen**: `http://localhost:3000/kitchen` (Paid orders only bump bar).
+- **Customer Status Page**: `http://localhost:3000/order-status` (Real-time prep countdown & verified PayPal receipt).
+- **Menu Onboarding**: `http://localhost:3000/onboarding` (AI vision paper menu extraction).
+
+# Run the 160-scenario Test Harness & Load Test
 python harness/runner.py
 
 # Start Core API server

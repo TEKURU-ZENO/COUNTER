@@ -28,6 +28,7 @@ from packages.domain.models import (
     OrderState,
     Quote,
     ShopPolicy,
+    VaultMandate,
 )
 from packages.domain.pricing import (
     MenuItemNotFoundError,
@@ -374,6 +375,94 @@ def test_guard_evaluate_send_payment_link_all_checks(sample_menu, default_policy
     assert d_ok.allowed is True
     assert d_ok.kind == GuardDecisionKind.ALLOW
     assert d_ok.target_state == OrderState.LINK_SENT
+
+
+def test_guard_evaluate_charge_saved_payment_all_branches(sample_menu, default_policy):
+    """Verify all 8 safety checks on voice-confirmed vaulted payments."""
+    guard = Guard(default_policy)
+    cart = [CartItem("item_pizza", "Margherita Pizza", 1)]
+    quote = calculate_quote("shop_123", cart, sample_menu)
+    valid_mandate = VaultMandate(
+        id="man_001",
+        vault_id="v_token_123",
+        customer_hash="cust_hash_1",
+        shop_id="shop_123",
+        max_charge_cents=5000,
+        status="ACTIVE",
+    )
+
+    # 1. Shop closed -> DENY
+    d_closed = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, valid_mandate, True, shop_open=False
+    )
+    assert d_closed.allowed is False
+    assert "closed" in d_closed.reason.lower()
+
+    # 2. Slot unavailable -> DENY
+    d_slot = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, valid_mandate, True, slot_available=False
+    )
+    assert d_slot.allowed is False
+    assert "fully booked" in d_slot.reason.lower()
+
+    # 3. Wrong state -> DENY
+    d_state = guard.evaluate_charge_saved_payment(
+        OrderState.DRAFT, quote.quote_hash, quote, valid_mandate, True
+    )
+    assert d_state.allowed is False
+    assert "must be in QUOTED state" in d_state.reason
+
+    # 4. No mandate or revoked mandate -> DENY
+    d_no_man = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, None, True
+    )
+    assert d_no_man.allowed is False
+    assert "No active PayPal vault mandate" in d_no_man.reason
+
+    revoked_man = VaultMandate("man_002", "v_2", "cust_1", "shop_123", 5000, status="REVOKED")
+    d_revoked = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, revoked_man, True
+    )
+    assert d_revoked.allowed is False
+
+    # 5. Mandate belongs to another shop -> DENY
+    other_shop_man = VaultMandate("man_003", "v_3", "cust_1", "other_shop", 5000, status="ACTIVE")
+    d_other = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, other_shop_man, True
+    )
+    assert d_other.allowed is False
+    assert "restricted to another restaurant" in d_other.reason
+
+    # 6. Order total exceeds mandate cap -> DENY
+    low_cap_man = VaultMandate("man_004", "v_4", "cust_1", "shop_123", max_charge_cents=500, status="ACTIVE")
+    d_cap = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, low_cap_man, True
+    )
+    assert d_cap.allowed is False
+    assert "exceeds customer's authorized vault mandate cap" in d_cap.reason
+
+    # 7. Quote hash mismatch -> DENY
+    d_hash = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, "bad_hash_val", quote, valid_mandate, True
+    )
+    assert d_hash.allowed is False
+    assert "Quote hash mismatch" in d_hash.reason
+
+    # 8. Spoken consent not recorded -> DENY
+    d_no_consent = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, valid_mandate, spoken_consent_recorded=False
+    )
+    assert d_no_consent.allowed is False
+    assert "Voice consent not verified" in d_no_consent.reason
+
+    # 9. All 8 safety conditions met -> ALLOW (CAPTURED)
+    d_ok = guard.evaluate_charge_saved_payment(
+        OrderState.QUOTED, quote.quote_hash, quote, valid_mandate, spoken_consent_recorded=True
+    )
+    assert d_ok.allowed is True
+    assert d_ok.kind == GuardDecisionKind.ALLOW
+    assert d_ok.target_state == OrderState.CAPTURED
+    assert d_ok.computed_amount_cents == quote.total_cents
 
 
 def test_guard_evaluate_refund_policies(default_policy):
