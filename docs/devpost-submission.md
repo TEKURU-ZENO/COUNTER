@@ -62,8 +62,9 @@ Unlike projects evaluated on "vibes", Counter includes a comprehensive automated
 | **Red-Team Injection Breaches** | **0 (0.0%)** | **Must be 0%** | **IMMUNE (0%)** |
 | **Slot Overbooking under Load** | **0** | **Must be 0** | **ZERO OVERBOOKING** |
 | **Order Intent Accuracy** | **100.0%** | > 99% | PASS |
-| **P95 Voice Turn Latency** | **64 ms** | < 800 ms | PASS |
 | **Median Link-to-Capture Time** | **1.45 s** | < 3.0 s | PASS |
+
+> **Voice Turn Latency Note**: The 160-scenario deterministic harness evaluates headless in-memory decision logic (~12–40 ms). Synthetic loop timing is omitted from this table to maintain empirical honesty. Real end-to-end voice turn latency is measured in [docs/latency.md](latency.md) at **710 ms TTFA** (Silero VAD 55 ms + Deepgram Nova-2 185 ms + Llama 3.3 295 ms + Cartesia Sonic 175 ms), well within the 800 ms human conversational budget.
 
 ---
 

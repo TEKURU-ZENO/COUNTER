@@ -21,7 +21,8 @@ from packages.paypal_gateway.client import PayPalGatewayClient
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_test_database():
-    """Ensure sample menu exists for voice tests."""
+    """Initialize database tables and seed sample menu for voice tests."""
+    await init_db()
     async with async_session_maker() as session:
         pizza = await session.get(MenuItemModel, "item_pizza_margherita")
         if not pizza:

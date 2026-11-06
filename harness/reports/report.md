@@ -1,7 +1,7 @@
 # COUNTER Automated Test Harness & Proof Report
 
-Generated: `2026-10-25T23:19:16.272937`
-Environment: Python 3.11 / Pure Domain Guard / In-Memory Mock PayPal Sandbox
+Generated: `2026-11-06T06:39:51.210745+00:00`
+Environment: Python 3.14 / Pure Domain Guard / In-Memory Mock PayPal Sandbox
 
 ---
 
@@ -15,8 +15,10 @@ Environment: Python 3.11 / Pure Domain Guard / In-Memory Mock PayPal Sandbox
 | **Red-Team Injection Breaches** | **0 (0.0%)** | **Must be 0%** | **IMMUNE (0%)** |
 | **Slot Overbooking under Load** | **0** | **Must be 0** | **ZERO OVERBOOKING** |
 | **Order Intent Accuracy** | **100.0%** | > 99% | PASS |
-| **P95 Voice Turn Latency** | **64 ms** | < 800 ms | PASS |
 | **Median Link-to-Capture Time** | **1.45 s** | < 3.0 s | PASS |
+
+> **Voice Turn Latency Note**: The 160-scenario deterministic harness executes headless in-memory agent decision logic (~12–40 ms). Synthetic loop timing is omitted from this table to maintain empirical honesty. Real end-to-end voice turn latency is measured in [docs/latency.md](docs/latency.md) at **710 ms TTFA** (Silero VAD 55 ms + Deepgram Nova-2 185 ms + Llama 3.3 295 ms + Cartesia Sonic 175 ms), well below the 800 ms conversational budget.
+
 
 ---
 

@@ -1,6 +1,6 @@
 # COUNTER: Measured Latency Benchmarks & Empirical Spike Results
 
-Generated: `2026-10-25 13:11:22 UTC`
+Generated: `2026-11-06 12:13:57 UTC`
 Environment: Live Sandbox Spike & Streaming Audio Pipeline Benchmarks
 
 ---
@@ -37,7 +37,7 @@ Caller Hears First Audio Chunk                710 ms TOTAL
 ## 2. PayPal Payment Latencies: First-Time Link vs Vaulted Wallet
 
 ### A. First-Time Buyer (Payment Link Flow)
-1. **Order Create (`POST /v2/checkout/orders` with `attributes.vault`)**: **13 ms**
+1. **Order Create (`POST /v2/checkout/orders` with `attributes.vault`)**: **12 ms**
 2. **Buyer Approval in Mobile Web / PayPal Modal**: ~8 to 15 seconds (human interaction)
 3. **Webhook Arrival (`CHECKOUT.ORDER.APPROVED`)**:
    - Median: **1420 ms**
@@ -53,6 +53,6 @@ Because the buyer's PayPal wallet was vaulted on their first order with an appro
 1. **Quote Readback**: Caller hears total read back with cryptographic quote hash.
 2. **Spoken Consent**: Caller says *"Yes, charge it"*.
 3. **Direct Capture via Vault ID (`POST /v2/checkout/orders` with `payment_source.paypal.vault_id`)**:
-   - **Measured Latency**: **15 ms**
+   - **Measured Latency**: **14 ms**
    - **Round-Trip Confirmation**: **Under 500 ms** total!
    - Zero link clicking, zero context switching, zero waiting on SMS.

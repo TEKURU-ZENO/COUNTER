@@ -7,7 +7,7 @@ and webhook exact-once deduplication.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,7 +158,7 @@ class OrderRepository:
         update_vals: Dict[str, Any] = {
             "state": next_state.value,
             "version": order.version + 1,
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }
         if paypal_order_id:
             update_vals["paypal_order_id"] = paypal_order_id
@@ -234,7 +234,7 @@ class OrderRepository:
             type=event_type,
             verified=verified,
             payload_json=json.dumps(payload),
-            processed_at=datetime.utcnow(),
+            processed_at=datetime.now(timezone.utc),
         )
         self.session.add(webhook_event)
         try:
@@ -330,6 +330,6 @@ class OrderRepository:
         if not mandate:
             return False
         mandate.status = "REVOKED"
-        mandate.revoked_at = datetime.utcnow()
+        mandate.revoked_at = datetime.now(timezone.utc)
         await self.session.commit()
         return True
