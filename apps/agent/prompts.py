@@ -47,3 +47,4 @@ CONSENT_GIVE_UP = (
     "Would you like a payment link by text instead?"
 )
 LLM_UNAVAILABLE = "Sorry, our ordering assistant is unavailable right now. Please call back in a few minutes."
+LLM_BUSY = "Sorry, I missed that. Could you say it once more?"

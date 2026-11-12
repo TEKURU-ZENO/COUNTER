@@ -16,6 +16,7 @@ Every turn is persisted with model, prompt version, measured LLM latency / TTFT 
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from apps.agent.prompts import (
     GREETING_NEW,
     GREETING_RETURNING,
     HANDOFF_LINE,
+    LLM_BUSY,
     LLM_UNAVAILABLE,
     PROMPT_VERSION,
     SILENCE_GOODBYE,
@@ -45,6 +47,8 @@ from apps.core.telemetry import record_client_span, tracer
 from packages.domain.consent import classify_consent
 from packages.domain.models import ConsentDecision
 from packages.domain.pricing import format_cents
+
+logger = logging.getLogger("counter.agent")
 
 MAX_TOOL_STEPS = 4
 MAX_HISTORY = 30
@@ -179,7 +183,18 @@ class CallSession:
             if self.state.pending == "consent":
                 speech = await self._handle_consent_reply(text, interrupted)
             else:
-                speech = await self._llm_turn(metrics, caller_phone)
+                checkpoint = len(self.state.messages)
+                try:
+                    speech = await self._llm_turn(metrics, caller_phone)
+                except LLMUnavailableError:
+                    raise
+                except Exception as exc:  # provider outage or rate limit: keep the call alive
+                    logger.warning("LLM turn failed for %s: %s", self.call_id, str(exc)[:200])
+                    # Drop any half-finished tool exchange so the history stays valid for the next turn.
+                    del self.state.messages[checkpoint:]
+                    metrics.low_confidence = True
+                    span.set_attribute("llm.error", type(exc).__name__)
+                    speech = LLM_BUSY
 
             if metrics.low_confidence:
                 self.state.low_confidence_streak += 1

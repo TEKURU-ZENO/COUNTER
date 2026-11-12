@@ -263,3 +263,14 @@ async def test_compromised_model_cannot_move_money(container: Container, client,
         session.state.total_cents = session.state.total_cents or 0
         await session.handle_turn("yes")  # ...a "yes" without mandate + code cannot charge
     assert await _ledger_snapshot(container) == before
+
+
+async def test_llm_failure_keeps_call_alive(container: Container) -> None:
+    def boom(kw):  # type: ignore[no-untyped-def]
+        raise RuntimeError("LLM HTTP 429: rate limited")
+
+    session, _ = await start_call(container, [boom, call("set_cart", {"items": [MARGHERITA]}), say("ok")])
+    first = await session.handle_turn("one margherita")
+    assert "say it once more" in first.speech and not first.ended
+    second = await session.handle_turn("one margherita")
+    assert second.order and second.order["state"] == "QUOTED"
