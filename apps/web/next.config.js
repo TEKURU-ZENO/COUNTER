@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 // The browser only talks to this origin. /api is proxied to the FastAPI service, so the
 // merchant session cookie is first-party and the API's CORS can stay locked to this origin.
-const apiUrl = process.env.API_INTERNAL_URL || "http://localhost:8000";
+const rawApi = process.env.API_INTERNAL_URL || "http://localhost:8000";
+// Render private networking gives host:port without a scheme.
+const apiUrl = rawApi.startsWith("http://") || rawApi.startsWith("https://") ? rawApi : `http://${rawApi}`;
 
 const nextConfig = {
   reactStrictMode: true,

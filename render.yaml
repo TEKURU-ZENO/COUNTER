@@ -1,67 +1,130 @@
+# Render Blueprint. Secrets marked sync:false are entered in the Render dashboard once.
+# The API refuses to start in staging/production with mock PayPal, default secrets, missing
+# merchant credentials or SQLite, so a half-configured deploy fails loudly instead of "working".
 services:
-  # 1. FastAPI Core API
   - type: web
     name: counter-api
-    env: python
+    runtime: python
     region: oregon
-    plan: standard
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    buildCommand: pip install --require-hashes -r requirements.txt
+    startCommand: uvicorn apps.api.main:create_app --factory --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /healthz
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: ENVIRONMENT
+        value: staging
+      - key: PAYPAL_MODE
+        value: sandbox
       - key: DATABASE_URL
-        fromDatabase:
-          name: counter-db
-          property: connectionString
+        fromDatabase: { name: counter-db, property: connectionString }
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: counter-redis
-          property: connectionString
+        fromService: { type: keyvalue, name: counter-redis, property: connectionString }
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CALLER_HASH_KEY
+        generateValue: true
+      - key: SERVICE_TOKEN
+        generateValue: true
+      - key: WEB_BASE_URL
+        sync: false   # e.g. https://counter-web.onrender.com
+      - key: API_PUBLIC_URL
+        sync: false   # e.g. https://counter-api.onrender.com (Twilio signs this URL)
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD_HASH
+        sync: false   # python -m infra.scripts.hash_password
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false   # register <WEB_BASE_URL>/api/v1/paypal/webhooks in the PayPal developer dashboard
+      - key: LLM_PROVIDER
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DEMO_SMS_INBOX
+        value: "true"   # sandbox demo only; refused in production
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false   # optional: Elastic APM OTLP endpoint
+      - key: OTEL_EXPORTER_OTLP_HEADERS
+        sync: false
+
+  - type: worker
+    name: counter-worker
+    runtime: python
+    region: oregon
+    plan: starter
+    buildCommand: pip install --require-hashes -r requirements.txt
+    startCommand: python -m apps.worker.worker
+    envVars:
+      - fromGroup: counter-shared
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        fromDatabase: { name: counter-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: counter-redis, property: connectionString }
+      - key: SECRET_KEY
+        fromService: { type: web, name: counter-api, envVarKey: SECRET_KEY }
+      - key: CALLER_HASH_KEY
+        fromService: { type: web, name: counter-api, envVarKey: CALLER_HASH_KEY }
+      - key: SERVICE_TOKEN
+        fromService: { type: web, name: counter-api, envVarKey: SERVICE_TOKEN }
+      - key: ZAPIER_WEBHOOK_URL
+        sync: false   # optional
+      - key: ZAPIER_SIGNING_SECRET
+        sync: false
+
+  - type: web
+    name: counter-web
+    runtime: node
+    region: oregon
+    plan: starter
+    rootDir: apps/web
+    buildCommand: npm ci && npm run build
+    startCommand: npx next start -p $PORT
+    envVars:
+      - key: API_INTERNAL_URL
+        fromService: { type: web, name: counter-api, property: hostport }
+
+  - type: keyvalue
+    name: counter-redis
+    region: oregon
+    plan: free
+    ipAllowList: []
+
+envVarGroups:
+  - name: counter-shared
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
       - key: PAYPAL_MODE
         value: sandbox
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
-
-  # 2. Background Worker (Sweeps & Webhooks)
-  - type: worker
-    name: counter-worker
-    env: python
-    region: oregon
-    plan: standard
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m apps.worker.worker
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: counter-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: counter-redis
-          property: connectionString
-
-  # 3. Next.js 15 Web Application
-  - type: web
-    name: counter-web
-    env: node
-    region: oregon
-    plan: standard
-    rootDir: apps/web
-    buildCommand: npm install --legacy-peer-deps && npm run build
-    startCommand: npm run start
-    envVars:
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: counter-api
-          property: host
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD_HASH
+        sync: false
+      - key: WEB_BASE_URL
+        sync: false
 
 databases:
   - name: counter-db
     databaseName: counter
     user: counter
     region: oregon
-    plan: standard
+    plan: basic-256mb
