@@ -33,3 +33,8 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# SQLite WAL side files
+*.db-shm
+*.db-wal
+apps/web/.env.local
