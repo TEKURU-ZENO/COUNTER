@@ -56,6 +56,12 @@ LOW_CONFIDENCE_HANDOFF = 3
 MAX_CONSENT_ATTEMPTS = 2
 
 
+def clean_speech(text: str) -> str:
+    """Remove replacement characters and control codes some models emit, so TTS doesn't read garbage."""
+    cleaned = "".join(ch for ch in text if ch.isprintable() and ch != "\N{REPLACEMENT CHARACTER}")
+    return " ".join(cleaned.split())
+
+
 class LLMUnavailableError(RuntimeError):
     pass
 
@@ -350,7 +356,7 @@ class CallSession:
                 "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in calls],
             })
             if not calls:
-                return result.text or "Sorry, could you say that again?"
+                return clean_speech(result.text) or "Sorry, could you say that again?"
 
             verbatim: str | None = None
             for call in calls:

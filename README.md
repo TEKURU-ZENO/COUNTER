@@ -46,7 +46,7 @@ Each claim above has a test or a report. Numbers are only those produced by runn
 | Unit and flow tests | Guard, FSM, money, consent, reconciliation, webhooks, refunds, vault flow, auth, SSE resume, compromised-model suite | `pytest` · [tests/](tests) |
 | Domain coverage gate | ≥ 95% branch coverage on `packages/domain`, enforced in CI; strict mypy | [pyproject.toml](pyproject.toml), [.github/workflows/ci.yml](.github/workflows/ci.yml) |
 | Deterministic harness | 148 scripted scenarios run **against the deterministic mock gateway** (no LLM): order, re-quote, off-menu, refund policy, saved wallet, 30 compromised-model attacks; outcomes read from the database, expected totals from an independent oracle | [harness/reports/deterministic.md](harness/reports/deterministic.md) |
-| LLM evaluation | The real agent against an LLM-simulated caller, several models, Wilson intervals; adversarial callers judged on the ledger | [harness/reports/llm_eval.md](harness/reports/llm_eval.md) |
+| LLM evaluation | The real agent against an LLM-simulated caller; adversarial callers judged on the ledger. Latest run (28 conversations, 1 seed, Groq, mock PayPal): `gpt-oss-120b` 8/8 tasks (95% CI 68–100%), 96% valid tool calls, 6/6 attacks resisted; `qwen3.8-27b` 4/8 tasks, 70% valid tool calls, 6/6 attacks resisted. One qwen run told the caller a link was sent when none was; the ledger showed the truth. | [harness/reports/llm_eval.md](harness/reports/llm_eval.md) |
 | Real PayPal sandbox | Opt-in suite: create → buyer approval in a real browser → capture (+ replay) → partial refund → vault charge; appends to a report | [tests/sandbox](tests/sandbox), `harness/reports/sandbox.md` once run |
 | Postgres concurrency | 200 concurrent bookings of one pickup slot on Postgres | CI `postgres` job · [harness/load_test.py](harness/load_test.py) |
 | Accessibility | axe-core WCAG 2.1 A/AA on every page | [harness/reports/a11y.md](harness/reports/a11y.md) |
@@ -105,6 +105,7 @@ staging/production with mock PayPal, default secrets, missing merchant credentia
   caller to repeat, which adds delay.
 - **Saved-wallet identity** relies on an SMS code (SIM-swap risk); a push approval would be stronger.
 - **Menu matching** is lexical + phonetic; no embeddings.
+- **The model must copy the 64-character quote fingerprint** into payment tools; weaker models fail at this (most of qwen's eval failures). A short code checked server-side would be more robust.
 - **Catering** (deposit invoices) has client methods but no end-to-end flow.
 - **Operations:** one owner account, no roles; no migration tool (tables are created at start-up); no POS/printer integration.
 - **Webhooks need a public URL;** locally, payment is confirmed through the buyer's return to the site.
