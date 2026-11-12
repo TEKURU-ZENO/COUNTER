@@ -1,79 +1,62 @@
-# COUNTER: System Architecture & Data Flow
-
-## 1. High-Level Topology
+# Architecture
 
 ```
-                 ┌──────────────────────────────────────────────┐
-  Caller ──────► │  LiveKit (WebRTC room / SIP from Twilio)     │
-  (browser or    └───────────────┬──────────────────────────────┘
-   phone)                        │ audio
-                 ┌───────────────▼──────────────────────────────┐
-                 │  Voice Agent Worker (LiveKit Agents, Python) │
-                 │  VAD → STT → LLM (tool calls) → TTS          │
-                 └───────────────┬──────────────────────────────┘
-                                 │ typed tool calls (Pydantic)
-                 ┌───────────────▼──────────────────────────────┐
-                 │  Core API (FastAPI)                          │
-                 │  ┌─────────┐ ┌─────────┐ ┌────────────────┐  │
-                 │  │ Guard   │►│ Order   │►│ PayPal Gateway │──┼──► PayPal REST
-                 │  │ (policy)│ │ Engine  │ │ (idempotent)   │  │    (Orders, Payments,
-                 │  └─────────┘ │ (FSM +  │ └────────────────┘  │     Invoicing, Reporting,
-                 │              │ pricing)│                     │     Catalog, Webhooks)
-                 │              └────┬────┘                     │
-                 │                   │ outbox events            │◄── PayPal webhooks
-                 └───────────────────┼──────────────────────────┘    (verified)
+ caller ──speech──▶ Twilio <Gather> ─┐            ┌──────────── Next.js (web) ─────────────┐
+ browser demo (Web Speech API) ──────┤            │ call demo · console · kitchen · status │
+                                     ▼            └───────────────┬────────────────────────┘
+                             FastAPI  (apps/api)  ◀── /api proxy ─┘   SSE (Last-Event-ID)
                                      │
-                   Postgres ◄────────┤────────► Redis (pub/sub, jobs, locks)
-                                     │
-                 ┌───────────────────▼──────────────────────────┐
-                 │  Worker (arq): webhook processing, link       │
-                 │  expiry, reconciliation, no-show sweeps      │
-                 └──────────────────────────────────────────────┘
-                                     │ live events (SSE)
-                 ┌───────────────────▼──────────────────────────┐
-                 │  Web (Next.js): Merchant Console (AG Grid),   │
-                 │  Ops Copilot, Onboarding, Kitchen Screen,     │
-                 │  Order Status Page, Public Demo Page          │
-                 └──────────────────────────────────────────────┘
+                    CallSession (apps/agent/session.py)
+                     │  LLM picks a tool + typed args      consent reply ─▶ deterministic classifier
+                     ▼
+              AgentTools ──▶ PaymentService (apps/core/payments.py) ──▶ PayPal Orders v2 / Payments v2
+                     │              │  Guard + FSM + reconciliation (packages/domain, pure)
+                     ▼              ▼
+                       Postgres: orders, order_events, outbox, payments, refunds,
+                       webhook_events, consent_events, step_up_challenges, call_turns
+                                    │
+         PayPal webhooks ──verify──▶ webhook_events ──▶ worker (apps/worker) ──▶ state changes
+                                    outbox (FOR UPDATE SKIP LOCKED) ──▶ Redis pub/sub ──▶ every API ──▶ SSE
+                                                                    └─▶ Zapier hook (optional)
 ```
 
-## 2. Invariable Invariants
+## Principles
 
-1. **Deterministic Rule Enforcement**: The Voice Agent communicates with Core API exclusively via typed Pydantic tools. It has zero credentials to PayPal and cannot execute any financial mutation.
-2. **One-Way Financial Direction**: Integer cents flow strictly from `quote(cart, menu, tax_rule)` to PayPal Orders v2. No LLM output string is ever parsed into an amount.
-3. **Optimistic Locking**: Every order state transition enforces `WHERE id=:order_id AND version=:version`. Race conditions between incoming webhooks and caller cancellation are mathematically resolved without dirty writes.
-4. **Transactional Outbox**: All state mutations append an immutable record to `order_events` within the primary database transaction. The worker streams these outbox events onto Redis channels for agent injection and SSE frontend delivery.
-5. **Exact-Once Processing**: `webhook_events.paypal_event_id` is enforced by database uniqueness. Repeated deliveries from PayPal result in instantaneous, harmless no-ops.
+1. **The LLM talks; code decides.** The model chooses a tool and fills Pydantic-validated arguments.
+   Prices, refund amounts, consent and payment state are computed by code.
+2. **Integer cents end to end.** `cents_to_value` / `value_to_cents` use integer arithmetic; the PayPal
+   purchase unit is checked for `sum(items) == item_total` and `item_total + tax_total == amount`
+   before it is sent ([packages/domain/money.py](../packages/domain/money.py)).
+3. **One authoritative capture path.** The buyer's return from PayPal triggers a server-side capture;
+   `CHECKOUT.ORDER.APPROVED` is a recovery trigger for the same idempotent function. `PAYMENT.CAPTURE.*`
+   webhooks confirm or correct.
+4. **Transactional outbox.** A state change, its `order_events` row and its outbox row commit together.
+   The worker publishes outbox rows in per-order sequence to Redis; every API process fans out to its SSE
+   clients; clients resume with `Last-Event-ID`.
+5. **No PayPal call inside a database transaction.**
+6. **One container.** Settings → one factory → dependency injection ([apps/core/container.py](../apps/core/container.py)).
 
-## 3. Order Engine State Machine
+## Order state machine
 
 ```
-DRAFT ──quote──► QUOTED ──send_link──► LINK_SENT ──(webhook APPROVED)──► APPROVED
-  │                │                      │                                  │ capture
-  │                │                      └──(ttl)──► LINK_EXPIRED           ▼
-  └──cancel──► CANCELLED ◄──cancel────────┘                              CAPTURED
-                                                                             │ kitchen_accept
-                         REFUNDED_FULL ◄──refund(policy)── IN_KITCHEN ◄──────┘
-                         REFUNDED_PARTIAL ◄──refund(policy)──┘   │ mark_ready
-                                                               READY ──pickup──► PICKED_UP
-                                                                 └──(sweep)──► NO_SHOW
+DRAFT → QUOTED → LINK_SENT → APPROVED → CAPTURED → IN_KITCHEN → READY → PICKED_UP
+           │          │           └→ PAYMENT_PENDING ─┘                    └→ NO_SHOW
+           │          ├→ LINK_EXPIRED / CANCELLED
+           │          └→ PAYMENT_DENIED
+           └→ CAPTURED (saved wallet, after code + consent)
+ any paid state → REFUNDED_PARTIAL / REFUNDED_FULL · REVERSED · NEEDS_REVIEW (mismatch)
 ```
+Defined as data in [packages/domain/fsm.py](../packages/domain/fsm.py). The kitchen can accept only `CAPTURED`.
 
-## 4. Transition Table Specification
+## Packages
 
-| Current State | Permitted Action | Destination State | Side Effects & Pre-conditions |
-| :--- | :--- | :--- | :--- |
-| `DRAFT` | `quote` | `QUOTED` | Computes subtotal, tax, and quote SHA-256 hash |
-| `DRAFT` | `cancel` | `CANCELLED` | Releases reserved slot |
-| `QUOTED` | `send_link` | `LINK_SENT` | Validates quote hash match; invokes PayPal Orders v2 with `PayPal-Request-Id` |
-| `QUOTED` | `cancel` | `CANCELLED` | Clears cart; releases slot |
-| `LINK_SENT` | `expire` | `LINK_EXPIRED` | Background sweep expires order after policy TTL |
-| `LINK_SENT` | `cancel` | `CANCELLED` | Customer hangs up or rejects |
-| `LINK_SENT` | `approve` | `APPROVED` | Verified `CHECKOUT.ORDER.APPROVED` webhook arrives |
-| `APPROVED` | `capture` | `CAPTURED` | PayPal Orders v2 capture succeeds; outbox event dispatched; kitchen ticket created |
-| `CAPTURED` | `kitchen_accept` | `IN_KITCHEN` | Kitchen screen accepts ticket; prep begins |
-| `CAPTURED` | `refund_full` | `REFUNDED_FULL` | Cancelled before kitchen prep; 100% refund via PayPal Payments v2 refund |
-| `IN_KITCHEN` | `mark_ready` | `READY` | Kitchen finishes order; customer notified via SMS |
-| `IN_KITCHEN` | `refund_partial` | `REFUNDED_PARTIAL` | Cancelled during prep; policy-governed partial refund (e.g. 50%) |
-| `READY` | `pickup` | `PICKED_UP` | Customer picks up food; final state |
-| `READY` | `sweep_no_show`| `NO_SHOW` | Customer does not arrive after grace period; revenue retained |
+| Path | Role |
+| --- | --- |
+| `packages/domain` | Pure rules: pricing, FSM, guard, consent, reconciliation, money. Strict mypy, 95% branch-coverage gate. |
+| `packages/paypal_gateway` | `PayPalClient` (sandbox/live HTTP) and `MockPayPalGateway` (explicit `PAYPAL_MODE=mock` only). |
+| `apps/agent` | LLM adapters (Anthropic, OpenAI-compatible e.g. Groq), tools, call orchestration, menu matching. |
+| `apps/core` | Settings, container, payment service, event bus, identity, SMS, telemetry, integrations. |
+| `apps/api` | Routes: public/customer, merchant, Twilio, copilot, menu extraction, SSE. |
+| `apps/worker` | Webhook processing, outbox publishing, link-expiry and no-show sweeps. |
+| `apps/web` | Next.js 15 front end. |
+| `harness` | Deterministic harness, LLM evaluation, load test, accessibility scan. |

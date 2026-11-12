@@ -1,173 +1,114 @@
-# COUNTER: Deterministic AI Phone Agent for Independent Takeaways
+# COUNTER
 
-> **An AI phone agent for independent takeaway restaurants. It answers the call, takes the order, and gets the order paid through PayPal before the caller hangs up. Only paid orders reach the kitchen.**
+A phone ordering agent for independent takeaway restaurants. It takes the order by voice, gets it paid
+through PayPal while the caller is still on the line, and only sends paid orders to the kitchen.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python: 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
-[![Next.js: 15](https://img.shields.io/badge/Next.js-15-black.svg?logo=next.js&logoColor=white)](https://nextjs.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![PayPal REST API](https://img.shields.io/badge/PayPal-REST%20v2-003087.svg?logo=paypal&logoColor=white)](https://developer.paypal.com)
-[![LiveKit Cloud](https://img.shields.io/badge/LiveKit-WebRTC%20Voice-00D26A.svg)](https://livekit.io)
+The design rule: **the LLM talks, code decides what is allowed, PayPal moves the money.** The model picks
+a tool and fills typed arguments; prices, refund amounts, consent and payment state are decided by
+deterministic code that the model cannot reach around.
 
----
+> Status: hackathon project, running against the **PayPal sandbox**. See [Limitations](#limitations).
 
-## 1. The Core Idea
+## What it does
 
-The AI talks, PayPal moves the money, and a **deterministic engine decides what is allowed**. 
+| Flow | How | Code |
+| --- | --- | --- |
+| Take an order | LLM tool-calling loop; menu items matched lexically and phonetically, low confidence asks the caller | [apps/agent/session.py](apps/agent/session.py), [catalog_match.py](apps/agent/catalog_match.py) |
+| Price it | Integer cents, tax with half-up rounding, a SHA-256 fingerprint of the quote to detect changes after the read-back | [packages/domain/pricing.py](packages/domain/pricing.py) |
+| Pay by link | PayPal Orders v2 with itemised breakdown; buyer approves on PayPal's checkout; server captures on return | [apps/core/payments.py](apps/core/payments.py) |
+| Pay with saved PayPal | Vault on first purchase (opt-in), then SMS one-time code + recorded spoken consent before a merchant-initiated charge | [docs/threat-model.md](docs/threat-model.md#2-caller-id-spoofing-against-saved-wallets) |
+| Reconcile | Capture counts as paid only if COMPLETED and amount/currency/`custom_id` match the quote; otherwise pending, denied or needs review | [packages/domain/reconcile.py](packages/domain/reconcile.py) |
+| Refund | Policy refunds by phone (full before cooking, partial during), owner refunds bounded by what is left, approvals above a threshold | [packages/domain/guard.py](packages/domain/guard.py) |
+| Webhooks | Verified with PayPal, stored once by event id, applied by the worker | [apps/api/routes_public.py](apps/api/routes_public.py), [apps/worker/worker.py](apps/worker/worker.py) |
+| Live screens | Kitchen, console (AG Grid) and customer status page update over SSE fed by a transactional outbox through Redis | [apps/api/sse.py](apps/api/sse.py), [apps/web](apps/web) |
+| Ops copilot | LLM with read-only ledger + PayPal reporting tools; answers with a figure it can't trace to a tool result are withheld | [apps/api/copilot.py](apps/api/copilot.py) |
+| Menu from a photo | Vision model returns per-field confidence; prices validated; nothing publishes without owner confirmation | [apps/api/menu_extract.py](apps/api/menu_extract.py) |
+| Phone channel | Twilio `<Gather>`/`<Say>` with signature verification | [apps/api/routes_twilio.py](apps/api/routes_twilio.py) |
 
-The LLM cannot invent a price, discount, or refund on its own. Every transition is guarded, every calculation is in integer cents, every quote is cryptographically hashed, and every state mutation is protected by optimistic locking and transactional outbox events.
+Architecture: [docs/architecture.md](docs/architecture.md). Threats and controls: [docs/threat-model.md](docs/threat-model.md).
 
-```
-Caller (Browser / Twilio SIP)
-  │ Audio (WebRTC)
-  ▼
-LiveKit Voice Agent Worker (VAD → STT → LLM → TTS)
-  │ Typed Tool Calls (Pydantic v2)
-  ▼
-Core API (FastAPI)
-  ┌─────────────────────────────────────────────────────────────┐
-  │ 1. Guard (Policy, Quota, Quote Hash, Capacity Verification) │
-  │                             │                               │
-  │                             ▼                               │
-  │ 2. Order Engine (Deterministic FSM + Pure Pricing in Cents) │
-  │                             │                               │
-  │                             ▼                               │
-  │ 3. PayPal Gateway (Idempotent Orders, Payments, Invoicing)  │
-  └─────────────────────────────┬───────────────────────────────┘
-                                │ Transactional Outbox + Events
-            Postgres / SQLite ◄─┴─► Redis Pub/Sub & arq Worker
-                                         │ SSE Live Updates
-                                         ▼
-                     Next.js 15 Merchant Console & Kitchen Display
-```
+## PayPal surfaces used
 
----
+- **Orders v2:** create (`payment_source.paypal.experience_context`, optional `vault.store_in_vault=ON_SUCCESS`), capture, get; merchant-initiated charge with `payment_source.paypal.vault_id`.
+- **Payments v2:** refunds with idempotency keys.
+- **Webhooks:** `verify-webhook-signature`; `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED/PENDING/DENIED/REVERSED/REFUNDED`, `VAULT.PAYMENT-TOKEN.CREATED`.
+- **Transaction Search:** used by the copilot's `paypal_transactions` tool.
+- **Invoicing v2:** client methods for catering deposits; the end-to-end catering flow is not built (see limitations).
 
-## 2. Invariants That Never Bend
+Every money-moving call sends a deterministic `PayPal-Request-Id` (e.g. `order:{id}:capture`).
 
-1. **Typed Boundary**: The voice agent only communicates with Core API through typed Pydantic tools. It never touches PayPal API directly.
-2. **One-Way Financial Flow**: Integer cents flow from `pricing.quote()` to PayPal. Nothing the LLM outputs is ever read as an amount.
-3. **Cryptographic Quote Hash**: `send_payment_link(quote_hash)` checks the exact hash heard by the caller. If the cart was altered, the Guard rejects the link.
-4. **Optimistic Locking**: Every order transition enforces `WHERE id=? AND version=?`. Webhook races and caller cancels never produce dirty writes.
-5. **Exact-Once Webhooks**: `webhook_events.paypal_event_id` is unique. Duplicate PayPal retries are idempotent no-ops.
-6. **Voice-Confirmed Vault Mandates**: Repeat customers can be charged directly to their vaulted PayPal wallet (`payment_source.paypal.attributes.vault`) without opening a link, guarded by a per-order price cap, quote hash verification, and recorded spoken consent.
+## Evidence
 
----
+Each claim above has a test or a report. Numbers are only those produced by running the code.
 
-## 3. Order Engine State Machine
+| Evidence | What it shows | Where |
+| --- | --- | --- |
+| Unit and flow tests | Guard, FSM, money, consent, reconciliation, webhooks, refunds, vault flow, auth, SSE resume, compromised-model suite | `pytest` · [tests/](tests) |
+| Domain coverage gate | ≥ 95% branch coverage on `packages/domain`, enforced in CI; strict mypy | [pyproject.toml](pyproject.toml), [.github/workflows/ci.yml](.github/workflows/ci.yml) |
+| Deterministic harness | 148 scripted scenarios run **against the deterministic mock gateway** (no LLM): order, re-quote, off-menu, refund policy, saved wallet, 30 compromised-model attacks; outcomes read from the database, expected totals from an independent oracle | [harness/reports/deterministic.md](harness/reports/deterministic.md) |
+| LLM evaluation | The real agent against an LLM-simulated caller, several models, Wilson intervals; adversarial callers judged on the ledger | [harness/reports/llm_eval.md](harness/reports/llm_eval.md) |
+| Real PayPal sandbox | Opt-in suite: create → buyer approval in a real browser → capture (+ replay) → partial refund → vault charge; appends to a report | [tests/sandbox](tests/sandbox), `harness/reports/sandbox.md` once run |
+| Postgres concurrency | 200 concurrent bookings of one pickup slot on Postgres | CI `postgres` job · [harness/load_test.py](harness/load_test.py) |
+| Accessibility | axe-core WCAG 2.1 A/AA on every page | [harness/reports/a11y.md](harness/reports/a11y.md) |
+| Latency | Generated from stored measurements only | [docs/latency.md](docs/latency.md) |
 
-![State Machine](docs/state-machine.svg)
+## Run it locally
 
-- **DRAFT** ── `quote` ──► **QUOTED** ── `send_link` ──► **LINK_SENT** ── `APPROVED` ──► **CAPTURED**
-- **QUOTED** ── `charge_saved_payment` (Vault) ──► **CAPTURED** *(Instant voice confirmation for repeat callers)*
-- **CAPTURED** ── `kitchen_accept` ──► **IN_KITCHEN** ── `mark_ready` ──► **READY** ── `pickup` ──► **PICKED_UP**
-- Guard-enforced policy refunds: Full refund before kitchen (`REFUNDED_FULL`), partial refund during prep (`REFUNDED_PARTIAL`), or manual escalation for amounts above policy threshold.
+Requirements: Python 3.12+, Node 22.
 
----
-
-## 4. Measured Claims: Automated Test Harness Proof
-
-Every number below is deterministically measured and reproduced with a single command (`python harness/runner.py`):
-
-| Metric | Measured Value | Target / Requirement | Status |
-| :--- | :---: | :---: | :---: |
-| **Total Test Scenarios** | **160** | 150+ scenarios | PASS |
-| **Wrong Charges** | **0** | **Must be 0** | **PERFECT (0)** |
-| **Policy Violations** | **0** | **Must be 0** | **PERFECT (0)** |
-| **Red-Team Injection Breaches** | **0 (0.0%)** | **Must be 0%** | **IMMUNE (0%)** |
-| **Slot Overbooking under Load** | **0** | **Must be 0** | **ZERO OVERBOOKING** |
-| **Order Intent Accuracy** | **100.0%** | > 99% | PASS |
-| **Median Link-to-Capture Time** | **1.45 s** | < 3.0 s | PASS |
-
-> **Voice Turn Latency Note**: The 160-scenario deterministic harness evaluates headless in-memory decision logic (~12–40 ms). Synthetic loop timing is omitted from this table to maintain empirical honesty. Real end-to-end voice turn latency is measured in [docs/latency.md](docs/latency.md) at **710 ms TTFA** (Silero VAD 55 ms + Deepgram Nova-2 185 ms + Llama 3.3 295 ms + Cartesia Sonic 175 ms), well within the 800 ms human conversational budget.
-
----
-
-## 5. PayPal API Surface & Versioning
-
-Counter adheres to official PayPal REST endpoints and versions:
-- **Orders v2** (`POST /v2/checkout/orders`, `POST /v2/checkout/orders/{id}/capture`): Order creation with wallet vaulting attributes, Venmo enablement, and direct capture.
-- **Payments v2** (`POST /v2/payments/captures/{id}/refund`, `GET /v2/payments/captures/{id}`): Deterministic policy refunds and status lookups.
-- **Invoicing v2** (`POST /v2/invoicing/invoices`, `POST /v2/invoicing/invoices/{id}/send`): Large catering deposit invoices.
-- **Catalog Products v1** (`POST /v1/catalogs/products`, `GET /v1/catalogs/products`): Automated menu item sync.
-- **Reporting & Transactions v1** (`GET /v1/reporting/transactions`): Daily settlement search for Ops Copilot.
-- **Webhook Signature Verification v1** (`POST /v1/notifications/verify-webhook-signature`): Exact-once cryptographic webhook verification.
-- **PayPal Agent Toolkit (Python)**: Official PayPal agent tooling powering natural language merchant ledger inquiries.
-
----
-
-## 6. Quick Start for Judges & Developers
-
-### Prerequisites
-- Python 3.11+
-- Node.js 18+ (Node 20+ recommended)
-
-### 1. Run Backend & Test Suite (30 seconds)
 ```bash
-# Setup environment
-cp .env.example .env
-
-# Install backend dependencies
-python -m venv .venv
-# Windows: .venv\Scripts\activate; Mac/Linux: source .venv/bin/activate
-pip install -r requirements.txt greenlet
-
-# Run the complete test suite (Domain, Persistence, Chaos, and Voice)
-pytest -v
-
-# Run the 160-scenario Test Harness & Load Test
-python harness/runner.py
-
-# Start Core API server
-uvicorn apps.api.main:app --reload --port 8000
+python -m venv .venv && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+cp .env.example .env        # set PAYPAL_MODE, secrets, LLM_* (see comments in the file)
+python -m infra.scripts.hash_password   # -> OWNER_PASSWORD_HASH
+uvicorn apps.api.main:create_app --factory --port 8000
+cd apps/web && npm ci && npm run dev    # http://localhost:3000, proxies /api to :8000
 ```
 
-### 2. Run Next.js 15 Web Application
+- `PAYPAL_MODE=mock` runs offline with an explicit, clearly labelled stand-in for PayPal's approval page.
+- `PAYPAL_MODE=sandbox` needs a sandbox REST app's client id/secret and a webhook id. Buyers approve on
+  `sandbox.paypal.com` with a sandbox personal account. Enable "Save payment methods" on the app for vaulting.
+- Without `LLM_PROVIDER`/`LLM_MODEL` and a key, calls return 503. Nothing falls back to keyword matching.
+- Full stack with Postgres and Redis: `docker compose up --build`.
+
+Tests:
+
 ```bash
-cd apps/web
-npm install --legacy-peer-deps
-npm run dev
-# Open http://localhost:3000
+pytest                                    # unit + flow tests (mock gateway)
+python -m harness.deterministic           # writes harness/reports/deterministic.md
+python -m harness.llm_eval --agents openai_compatible:openai/gpt-oss-120b,openai_compatible:qwen/qwen3.8-27b \
+  --simulator openai_compatible:openai/gpt-oss-20b --seeds 3
+pytest -m sandbox -o addopts="" tests/sandbox   # real sandbox; needs buyer credentials
 ```
 
-- **Live Demo Page**: `http://localhost:3000/` (Real browser call over WebRTC to Luigi's Pizza, customize toppings, pay with Sandbox Buyer Accounts or saved PayPal Vault).
-- **Merchant Console (AG Grid)**: `http://localhost:3000/console` (Live SSE order updates, Guard decision audit, Ops Copilot powered by PayPal Agent Toolkit).
-- **Kitchen Screen**: `http://localhost:3000/kitchen` (Paid orders only bump bar).
-- **Customer Status Page**: `http://localhost:3000/order-status` (Real-time prep countdown & verified PayPal receipt).
-- **Menu Onboarding**: `http://localhost:3000/onboarding` (AI vision paper menu extraction).
+Deploy: [render.yaml](render.yaml) (API, worker, web, Postgres, Key Value). The API refuses to start in
+staging/production with mock PayPal, default secrets, missing merchant credentials or SQLite.
 
-# Run the 160-scenario Test Harness & Load Test
-python harness/runner.py
+## Integrations
 
-# Start Core API server
-uvicorn apps.api.main:app --reload --port 8000
-```
+| Tool | Use |
+| --- | --- |
+| AG Grid | Live order grid in the merchant console |
+| Render | Blueprint for API, worker, web, Postgres and Key Value |
+| Postman | [postman/COUNTER.postman_collection.json](postman/COUNTER.postman_collection.json): flow checks plus webhook and auth negative tests |
+| Elastic | OpenTelemetry traces (agent turn, LLM, tools, client-reported STT/TTS) export over OTLP to Elastic Observability |
+| Zapier | Signed order events (paid, needs review, reversal, refund approval) to a Zapier Catch Hook |
+| KERNEL | Hosted browser for the sandbox approval step of the integration suite |
 
-### 2. Run Next.js 15 Web Application
-```bash
-cd apps/web
-npm install --legacy-peer-deps
-npm run dev
-# Open http://localhost:3000
-```
+## Limitations
 
-- **Live Demo Page**: `http://localhost:3000/` (Call Luigi's Pizza, customize toppings, pay with Sandbox PayPal)
-- **Merchant Console (AG Grid)**: `http://localhost:3000/console` (Live SSE order updates, Guard decision audit, Ops Copilot)
-- **Kitchen Screen**: `http://localhost:3000/kitchen` (Paid orders only, bump bar)
-- **Customer Status Page**: `http://localhost:3000/order-status` (Real-time prep countdown & verified receipt)
-- **Menu Onboarding**: `http://localhost:3000/onboarding` (AI vision paper menu extraction)
+- **No real merchant yet.** Nobody outside the team has used it with their own menu and customers.
+- **Sandbox only.** Live PayPal mode exists but has not been used.
+- **Voice:** the web demo uses the browser's speech recognition and synthesis; the Twilio phone channel is
+  implemented but untested on a live number. Speech timings are client-reported.
+- **LLM quality numbers come from a small evaluation** with an LLM-simulated caller; see the report for sample sizes and intervals.
+- **Free-tier LLM limits:** on Groq's free tier the agent can hit token-per-minute limits; it retries and asks the
+  caller to repeat, which adds delay.
+- **Saved-wallet identity** relies on an SMS code (SIM-swap risk); a push approval would be stronger.
+- **Menu matching** is lexical + phonetic; no embeddings.
+- **Catering** (deposit invoices) has client methods but no end-to-end flow.
+- **Operations:** one owner account, no roles; no migration tool (tables are created at start-up); no POS/printer integration.
+- **Webhooks need a public URL;** locally, payment is confirmed through the buyer's return to the site.
 
----
+## Licence
 
-## 6. Comprehensive Documentation
-- [docs/architecture.md](docs/architecture.md) — Detailed component topology, transactional outbox pattern, and state transitions.
-- [docs/threat-model.md](docs/threat-model.md) — Threat model, prompt injection defense, amount spoofing prevention, and race condition mitigations.
-- [docs/latency.md](docs/latency.md) — Measured voice turn-taking and PayPal webhook round-trip budgets.
-- [docs/devpost-submission.md](docs/devpost-submission.md) — Full technical submission writeup & PayPal API catalog.
-- [docs/video-demo-script.md](docs/video-demo-script.md) — 3-minute video walk-through script.
-- [harness/reports/report.md](harness/reports/report.md) — Generated test harness report with 150 scenarios.
-
----
-
-## License
-MIT (c) 2026 Counter Team. See [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
