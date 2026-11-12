@@ -1,0 +1,104 @@
+{
+ "note": "Credits for the photographs in this folder: photos.mjs credits prints the footer block for the ones the pages use.",
+ "photos": [
+  {
+   "file": "photo-f100303227-960.jpg",
+   "files": [
+    "photo-f100303227-500.jpg",
+    "photo-f100303227-960.jpg"
+   ],
+   "id": "f100303227",
+   "alt": "Margherita pizza on plate",
+   "by": "Shisma",
+   "licence": "CC BY 4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/4.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Margherita_pizza_on_plate.jpg",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f148942734.jpg",
+   "files": [
+    "photo-f148942734-500.jpg",
+    "photo-f148942734-960.jpg",
+    "photo-f148942734.jpg"
+   ],
+   "id": "f148942734",
+   "alt": "Nice pepperoni pizza",
+   "by": "YoutubeJarred33 Widower",
+   "licence": "CC BY 3.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Nice_pepperoni_pizza.jpg",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f155898740-500.jpg",
+   "files": [
+    "photo-f155898740-500.jpg"
+   ],
+   "id": "f155898740",
+   "alt": "Garlic bread - on plate, ready to eat",
+   "by": "Infrogmation of New Orleans",
+   "licence": "CC BY-SA 2.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Garlic_bread_-_on_plate,_ready_to_eat.jpg",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f11769909.jpg",
+   "files": [
+    "photo-f11769909-500.jpg",
+    "photo-f11769909-960.jpg",
+    "photo-f11769909.jpg"
+   ],
+   "id": "f11769909",
+   "alt": "Tiramisu - Raffaele Diomede",
+   "by": "Raffaele Diomede from Pordenone, ITALIA",
+   "licence": "CC BY 2.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/2.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Tiramisu_-_Raffaele_Diomede.jpg",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f126205963.jpg",
+   "files": [
+    "photo-f126205963-500.jpg",
+    "photo-f126205963-960.jpg",
+    "photo-f126205963.jpg"
+   ],
+   "id": "f126205963",
+   "alt": "Wood fire brick oven for baking pizza",
+   "by": "Basheer Tome",
+   "licence": "CC BY 2.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by/2.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Wood_fire_brick_oven_for_baking_pizza.jpg",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f41882039-960.jpg",
+   "files": [
+    "photo-f41882039-500.jpg",
+    "photo-f41882039-960.jpg"
+   ],
+   "id": "f41882039",
+   "alt": "Pizza Margherita ()",
+   "by": "Lombroso",
+   "licence": "CC BY-SA 4.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Pizza_Margherita_().JPG",
+   "source": "Wikimedia Commons"
+  },
+  {
+   "file": "photo-f155898739-500.jpg",
+   "files": [
+    "photo-f155898739-500.jpg"
+   ],
+   "id": "f155898739",
+   "alt": "Garlic bread - in pan, cooked",
+   "by": "Infrogmation of New Orleans",
+   "licence": "CC BY-SA 2.0",
+   "licenceUrl": "https://creativecommons.org/licenses/by-sa/2.0",
+   "page": "https://commons.wikimedia.org/wiki/File:Garlic_bread_-_in_pan,_cooked.jpg",
+   "source": "Wikimedia Commons"
+  }
+ ]
+}

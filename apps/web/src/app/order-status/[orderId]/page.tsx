@@ -2,24 +2,26 @@
 
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { ErrorState, LiveBadge, Loading, StateBadge } from "@/components/States";
-import { api, ApiError, money, type Order, STATE_LABELS } from "@/lib/api";
+import { ErrorState, LiveBadge, Loading, PayPalButton } from "@/components/States";
+import { Ticket } from "@/components/Ticket";
+import { api, ApiError, type Order } from "@/lib/api";
+import { MENU_MEDIA, OVEN } from "@/lib/menuMedia";
 import { useEventStream } from "@/lib/useEventStream";
 
 const MESSAGES: Record<string, { title: string; body: string }> = {
-  LINK_SENT: { title: "Waiting for your payment", body: "Finish paying on PayPal. This page updates by itself." },
-  APPROVED: { title: "Confirming your payment", body: "PayPal approved it; we're capturing the payment now." },
-  PAYMENT_PENDING: { title: "PayPal is still processing your payment", body: "We'll start cooking once PayPal confirms. No action needed." },
-  CAPTURED: { title: "Paid — thank you!", body: "The kitchen has your order." },
-  IN_KITCHEN: { title: "Your order is being made", body: "We'll update this page when it's ready." },
-  READY: { title: "Ready for pickup", body: "Come to the counter and give your order number." },
-  PICKED_UP: { title: "Enjoy your meal", body: "This order has been picked up." },
-  LINK_EXPIRED: { title: "This payment link expired", body: "Call the restaurant again to place a new order. You were not charged." },
-  PAYMENT_DENIED: { title: "Payment was declined", body: "You were not charged. Call the restaurant to try another way to pay." },
-  CANCELLED: { title: "Order cancelled", body: "You were not charged." },
-  NEEDS_REVIEW: { title: "We're checking your payment", body: "Something didn't match on our side. The restaurant will contact you." },
-  REFUNDED_FULL: { title: "Refunded", body: "Your refund was sent to your PayPal account." },
-  REFUNDED_PARTIAL: { title: "Partly refunded", body: "A partial refund was sent to your PayPal account." },
+  LINK_SENT: { title: "Waiting for your payment", body: "Finish paying on PayPal. This page updates on its own." },
+  APPROVED: { title: "Confirming your payment", body: "PayPal approved it. We're collecting the payment now." },
+  PAYMENT_PENDING: { title: "PayPal is still processing", body: "We start cooking the moment PayPal confirms. Nothing to do on your side." },
+  CAPTURED: { title: "Paid. The kitchen has it.", body: "Your ticket is on the rail and will be started shortly." },
+  IN_KITCHEN: { title: "It's in the oven", body: "We'll update this page when it's ready to collect." },
+  READY: { title: "Ready to collect", body: "Come to the counter and give your ticket number." },
+  PICKED_UP: { title: "Enjoy", body: "This order has been collected." },
+  LINK_EXPIRED: { title: "This payment link expired", body: "You weren't charged. Call again to place the order." },
+  PAYMENT_DENIED: { title: "PayPal declined the payment", body: "You weren't charged. Call again to pay another way." },
+  CANCELLED: { title: "Order cancelled", body: "You weren't charged." },
+  NEEDS_REVIEW: { title: "We're checking your payment", body: "Something didn't match on our side, so the restaurant will contact you before cooking." },
+  REFUNDED_FULL: { title: "Refunded", body: "The full amount went back to your PayPal account." },
+  REFUNDED_PARTIAL: { title: "Partly refunded", body: "A partial refund went back to your PayPal account." },
   REVERSED: { title: "Payment reversed", body: "Please contact the restaurant." },
 };
 
@@ -50,61 +52,68 @@ function Status() {
     return (
       <ErrorState
         title={error.status === 403 ? "This link is invalid or has expired" : "We couldn't load your order"}
-        message={error.status === 403 ? "Use the newest link from your text message or PayPal receipt." : error.message}
-        action={<button type="button" className="underline" onClick={load}>Try again</button>}
+        message={error.status === 403 ? "Use the newest link from your text or your PayPal receipt." : error.message}
+        action={
+          <button type="button" className="underline font-semibold min-h-[44px]" onClick={load}>
+            Try again
+          </button>
+        }
       />
     );
   }
-  if (!order) return <Loading label="Loading your order…" />;
+  if (!order) return <Loading label="Finding your ticket…" />;
 
   const msg = MESSAGES[order.state] ?? { title: order.state, body: "" };
-  const label = STATE_LABELS[order.state] ?? { label: order.state, tone: "info" as const };
+  const media = order.lines.map((l) => (l.item_id ? MENU_MEDIA[l.item_id] : undefined)).find(Boolean) ?? OVEN;
+
   return (
-    <div className="space-y-6">
-      {params.get("cancelled") && order.state === "LINK_SENT" && (
-        <p role="status" className="rounded-lg bg-amber-50 border border-amber-300 p-3 text-sm">
-          You left PayPal without paying. You can still use the payment link until it expires.
-        </p>
-      )}
-      <div className="flex items-center justify-between">
-        <StateBadge state={order.state} label={label.label} tone={label.tone} />
-        <LiveBadge status={stream} />
-      </div>
-      <div aria-live="polite">
-        <h1 className="text-3xl font-serif font-bold">{msg.title}</h1>
-        <p className="text-stone-700 mt-1">{msg.body}</p>
-      </div>
-      <div className="bg-white rounded-2xl border border-stone-200 p-6 space-y-4">
-        <div className="flex justify-between text-sm">
-          <span className="text-stone-700">{order.shop_name}</span>
-          <span className="font-mono">#{order.id.slice(-6)}</span>
+    <div className="grid gap-10 md:grid-cols-[minmax(0,1fr)_380px] items-start">
+      <div>
+        <div className="pin-photo">
+          <img src={media.src} srcSet={media.srcSet} sizes="(max-width: 768px) 100vw, 640px" width={media.width} height={media.height} alt={media.alt} className="block w-full h-auto" />
         </div>
-        {order.pickup_at && (
-          <p>
-            Pickup at{" "}
-            <strong>{new Date(order.pickup_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong>
+        {params.get("cancelled") && order.state === "LINK_SENT" && (
+          <p role="status" className="mt-6 rounded-2xl bg-pending-soft p-4 text-[15px] text-ink-soft">
+            You left PayPal without paying. The link still works until it expires.
           </p>
         )}
-        <ul className="text-sm space-y-1">
-          {order.lines.map((l, i) => (
-            <li key={i} className="flex justify-between">
-              <span>
-                {l.qty}× {l.name}
-                {l.modifiers.length > 0 && <span className="text-stone-600"> ({l.modifiers.join(", ")})</span>}
+        <div aria-live="polite" className="mt-6">
+          <h1 className="text-[clamp(32px,4vw,52px)] font-extrabold leading-[1] tracking-[-0.04em] text-balance">{msg.title}</h1>
+          <p className="mt-3 text-[17px] text-ink-soft max-w-[52ch]">{msg.body}</p>
+        </div>
+      </div>
+      <div>
+        <div className="rail mx-2" aria-hidden />
+        <div className="px-5 -mt-1">
+          <Ticket
+            number={`#${order.id.slice(-4).toUpperCase()}`}
+            state={order.state}
+            lines={order.lines}
+            subtotal={order.subtotal_cents}
+            tax={order.tax_cents}
+            total={order.total_cents}
+            currency={order.currency}
+            meta={
+              <span className="block">
+                <span className="block">{order.shop_name}</span>
+                {order.pickup_at && (
+                  <span className="block font-mono tabular">
+                    Pickup {new Date(order.pickup_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                )}
               </span>
-              <span className="tabular-nums">{money(l.line_total_cents, order.currency)}</span>
-            </li>
-          ))}
-        </ul>
-        <dl className="border-t border-stone-200 pt-2 text-sm tabular-nums space-y-1">
-          <div className="flex justify-between"><dt>Tax</dt><dd>{money(order.tax_cents, order.currency)}</dd></div>
-          <div className="flex justify-between font-semibold"><dt>Total</dt><dd>{money(order.total_cents, order.currency)}</dd></div>
-        </dl>
-        {order.state === "LINK_SENT" && order.approval_url && (
-          <a href={order.approval_url} className="block text-center rounded-lg bg-[#0070ba] text-white py-2 font-semibold">
-            Pay with PayPal
-          </a>
-        )}
+            }
+          >
+            {order.state === "LINK_SENT" && order.approval_url && (
+              <div className="mt-4">
+                <PayPalButton href={order.approval_url} />
+              </div>
+            )}
+          </Ticket>
+        </div>
+        <div className="mt-4 px-5">
+          <LiveBadge status={stream} />
+        </div>
       </div>
     </div>
   );
@@ -112,7 +121,7 @@ function Status() {
 
 export default function OrderStatusPage() {
   return (
-    <div className="max-w-xl mx-auto px-4 py-10">
+    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-10">
       <Suspense fallback={<Loading />}>
         <Status />
       </Suspense>

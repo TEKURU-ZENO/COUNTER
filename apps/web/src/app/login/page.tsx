@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { ErrorState } from "@/components/States";
 import { api, ApiError } from "@/lib/api";
+import { OVEN } from "@/lib/menuMedia";
 
 function LoginForm() {
   const router = useRouter();
@@ -29,21 +30,25 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={submit} className="bg-white rounded-xl border border-stone-200 p-6 space-y-4">
-      <h1 className="text-xl font-serif font-bold">Restaurant sign in</h1>
-      {error && <ErrorState title="Sign in failed" message={error} />}
-      <div className="space-y-1">
-        <label htmlFor="email" className="block text-sm font-medium">Email</label>
-        <input id="email" type="email" required autoComplete="username" value={email}
-          onChange={(e) => setEmail(e.target.value)} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+    <form onSubmit={submit} className="w-full max-w-sm space-y-4">
+      <h1 className="text-[36px] font-extrabold tracking-[-0.04em] leading-none">Restaurant sign-in</h1>
+      <p className="text-[15px] text-ink-soft">For the kitchen screen, the console and the menu.</p>
+      {error && <ErrorState title="That didn't work" message={error} />}
+      <div className="space-y-1.5">
+        <label htmlFor="email" className="block text-[14px] font-semibold">
+          Email
+        </label>
+        <input id="email" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)}
+          className="w-full min-h-[48px] rounded-full border border-board-line px-5 text-[16px]" />
       </div>
-      <div className="space-y-1">
-        <label htmlFor="password" className="block text-sm font-medium">Password</label>
-        <input id="password" type="password" required autoComplete="current-password" value={password}
-          onChange={(e) => setPassword(e.target.value)} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+      <div className="space-y-1.5">
+        <label htmlFor="password" className="block text-[14px] font-semibold">
+          Password
+        </label>
+        <input id="password" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
+          className="w-full min-h-[48px] rounded-full border border-board-line px-5 text-[16px]" />
       </div>
-      <button type="submit" disabled={busy}
-        className="w-full rounded-lg bg-terracotta-700 text-white py-2 font-semibold disabled:opacity-60">
+      <button type="submit" disabled={busy} className="btn-press w-full min-h-[48px] rounded-full bg-ink text-white font-bold text-[16px] disabled:opacity-60">
         {busy ? "Signing in…" : "Sign in"}
       </button>
     </form>
@@ -52,10 +57,15 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="max-w-sm mx-auto px-4 py-16">
-      <Suspense>
-        <LoginForm />
-      </Suspense>
+    <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-10 grid gap-10 md:grid-cols-2 items-center">
+      <div className="pin-photo order-2 md:order-1">
+        <img src={OVEN.src} srcSet={OVEN.srcSet} sizes="(max-width: 768px) 100vw, 560px" width={OVEN.width} height={OVEN.height} alt={OVEN.alt} className="block w-full h-auto" />
+      </div>
+      <div className="order-1 md:order-2 flex justify-center">
+        <Suspense>
+          <LoginForm />
+        </Suspense>
+      </div>
     </div>
   );
 }

@@ -84,7 +84,7 @@ def _order_row(o: OrderModel) -> dict[str, Any]:
         "pickup_at": o.pickup_at.isoformat() + "Z" if o.pickup_at else None,
         "paypal_order_id": o.paypal_order_id, "review_reason": o.review_reason, "call_id": o.call_id,
         "created_at": o.created_at.isoformat() + "Z", "updated_at": o.updated_at.isoformat() + "Z",
-        "lines": [{"name": line.name, "qty": line.qty, "line_total_cents": line.line_total_cents,
+        "lines": [{"item_id": line.item_id, "name": line.name, "qty": line.qty, "line_total_cents": line.line_total_cents,
                    "modifiers": [m["name"] for m in json.loads(line.modifiers_json or "[]")]} for line in o.lines],
     }
 

@@ -58,6 +58,7 @@ export const STATE_LABELS: Record<string, { label: string; tone: "ok" | "wait" |
 };
 
 export interface OrderLine {
+  item_id?: string;
   name: string;
   qty: number;
   line_total_cents: number;

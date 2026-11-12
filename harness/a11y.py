@@ -24,8 +24,8 @@ MERCHANT = ["/console", "/kitchen", "/onboarding"]
 
 
 def scan(page, url: str) -> list[dict]:  # type: ignore[no-untyped-def]
-    page.goto(url, wait_until="networkidle")
-    page.wait_for_timeout(800)
+    page.goto(url, wait_until="load")  # live pages keep an SSE stream open, so never "network idle"
+    page.wait_for_timeout(2000)
     page.add_script_tag(path=str(AXE))
     result = page.evaluate(
         "async () => await axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21a','wcag21aa']}})"
@@ -39,6 +39,7 @@ def main() -> int:
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page()
+        page.set_default_timeout(90000)
         for path in PUBLIC:
             rows.append((path, scan(page, base + path)))
         email, password = os.environ.get("A11Y_OWNER_EMAIL"), os.environ.get("A11Y_OWNER_PASSWORD")

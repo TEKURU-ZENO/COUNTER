@@ -1,11 +1,10 @@
 "use client";
 
-import type { ColDef } from "ag-grid-community";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
-import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RequireMerchant } from "@/components/RequireMerchant";
-import { Empty, ErrorState, LiveBadge, Loading } from "@/components/States";
+import { Empty, ErrorState, LiveBadge, Loading, StateBadge } from "@/components/States";
 import { api, ApiError, money, type Order, STATE_LABELS } from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 
@@ -24,6 +23,18 @@ interface CopilotAnswer {
   trace: { tool: string; args: Record<string, unknown>; result: unknown }[];
   model: string | null;
 }
+
+function StatusCell({ value }: ICellRendererParams<Order, string>) {
+  if (!value) return null;
+  const s = STATE_LABELS[value] ?? { label: value, tone: "info" as const };
+  return (
+    <span className="flex h-full items-center leading-5">
+      <StateBadge state={value} label={s.label} tone={s.tone} />
+    </span>
+  );
+}
+
+const SUGGESTIONS = ["How much did we take today?", "How much did we refund this week?", "What sold best this week?"];
 
 function Console() {
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -48,17 +59,18 @@ function Console() {
 
   const columns = useMemo<ColDef<Order>[]>(
     () => [
-      { field: "id", headerName: "Order", width: 150, valueFormatter: (p) => `#${String(p.value).slice(-6)}` },
-      { field: "state", headerName: "Status", width: 190, valueFormatter: (p) => STATE_LABELS[p.value]?.label ?? p.value },
+      // Sized to fit the console column at desktop widths, so the grid does not scroll sideways there.
+      { field: "id", headerName: "Ticket", width: 96, valueFormatter: (p) => `#${String(p.value).slice(-4).toUpperCase()}` },
+      { field: "state", headerName: "Status", width: 176, cellRenderer: StatusCell },
+      { headerName: "Items", flex: 2, minWidth: 160, valueGetter: (p) => p.data?.lines.map((l) => `${l.qty}× ${l.name}`).join(", ") ?? "" },
+      { field: "total_cents", headerName: "Total", width: 96, type: "rightAligned", valueFormatter: (p) => money(p.value), cellClass: "font-mono tabular" },
+      { field: "review_reason", headerName: "Review note", flex: 1, minWidth: 110 },
       {
-        headerName: "Items", flex: 2,
-        valueGetter: (p) => p.data?.lines.map((l) => `${l.qty}× ${l.name}`).join(", ") ?? "",
-      },
-      { field: "total_cents", headerName: "Total", width: 110, valueFormatter: (p) => money(p.value) },
-      { field: "review_reason", headerName: "Review note", flex: 1 },
-      {
-        field: "created_at", headerName: "Created", width: 120, sort: "desc",
-        valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""),
+        field: "created_at",
+        headerName: "Time",
+        width: 96,
+        sort: "desc",
+        valueFormatter: (p) => (p.value ? new Date(p.value).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""),
       },
     ],
     [],
@@ -73,12 +85,13 @@ function Console() {
     }
   }
 
-  async function ask(e: React.FormEvent) {
-    e.preventDefault();
+  async function ask(q: string) {
+    if (q.trim().length < 3) return;
+    setQuestion(q);
     setAsking(true);
     setCopilotError(null);
     try {
-      setAnswer(await api<CopilotAnswer>("/api/v1/merchant/copilot", { method: "POST", body: JSON.stringify({ question }) }));
+      setAnswer(await api<CopilotAnswer>("/api/v1/merchant/copilot", { method: "POST", body: JSON.stringify({ question: q }) }));
     } catch (err) {
       setCopilotError((err as ApiError).message);
     } finally {
@@ -87,75 +100,122 @@ function Console() {
   }
 
   const pending = approvals.filter((a) => a.status === "PENDING");
+  const review = orders?.filter((o) => o.state === "NEEDS_REVIEW").length ?? 0;
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-serif font-bold">Console</h1>
+    <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-[clamp(30px,3.6vw,48px)] font-extrabold tracking-[-0.04em] leading-none">Tonight&rsquo;s tickets</h1>
+          <p className="mt-2 text-[16px] text-ink-soft">
+            {orders === null ? "Loading" : `${orders.length} orders`}
+            {review > 0 && <span className="text-declined font-semibold"> · {review} need review</span>}
+            {pending.length > 0 && <span className="text-pending font-semibold"> · {pending.length} {pending.length === 1 ? "refund" : "refunds"} to approve</span>}
+          </p>
+        </div>
         <LiveBadge status={status} />
       </div>
-      {error && <ErrorState title="Couldn't load orders" message={error} />}
-
-      {pending.length > 0 && (
-        <section aria-labelledby="approvals" className="bg-amber-50 border border-amber-300 rounded-xl p-4">
-          <h2 id="approvals" className="font-semibold">Refunds waiting for your approval</h2>
-          <ul className="mt-2 divide-y divide-amber-200">
-            {pending.map((a) => (
-              <li key={a.id} className="py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span>
-                  #{a.order_id.slice(-6)}: <strong>{money(a.amount_cents)}</strong> — {a.reason}
-                </span>
-                <span className="flex gap-2">
-                  <button type="button" onClick={() => decide(a.id, true)} className="rounded-lg bg-emerald-700 text-white px-3 py-1">
-                    Approve refund
-                  </button>
-                  <button type="button" onClick={() => decide(a.id, false)} className="rounded-lg border border-stone-400 px-3 py-1">
-                    Reject
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {error && (
+        <div className="mt-6">
+          <ErrorState title="The console couldn't load" message={error} />
+        </div>
       )}
 
-      <section aria-label="Orders" className="bg-white rounded-xl border border-stone-200 p-2">
-        {orders === null ? (
-          <Loading label="Loading orders…" />
-        ) : orders.length === 0 ? (
-          <Empty title="No orders yet" message="Orders appear here live as callers place them." />
-        ) : (
-          <div className="ag-theme-alpine" style={{ height: 420 }}>
-            <AgGridReact<Order> rowData={orders} columnDefs={columns} getRowId={(p) => p.data.id} animateRows />
-          </div>
-        )}
-      </section>
+      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section aria-label="Orders" className="min-w-0">
+          {orders === null ? (
+            <Loading label="Loading orders…" />
+          ) : orders.length === 0 ? (
+            <div className="rounded-[24px] bg-board-sunk">
+              <Empty title="No tickets yet" message="Orders appear here live as callers place them." />
+            </div>
+          ) : (
+            <div className="ag-theme-quartz">
+              <AgGridReact<Order> rowData={orders} columnDefs={columns} getRowId={(p) => p.data.id} domLayout="autoHeight" animateRows />
+            </div>
+          )}
+        </section>
 
-      <section aria-labelledby="copilot" className="bg-white rounded-xl border border-stone-200 p-5 space-y-3">
-        <h2 id="copilot" className="font-semibold flex items-center gap-2">
-          <MessageSquare className="w-4 h-4" aria-hidden /> Ask about your orders
-        </h2>
-        <p className="text-xs text-stone-600">
-          Read-only. Answers only include figures that come straight from your ledger or PayPal reporting.
-        </p>
-        <form onSubmit={ask} className="flex gap-2">
-          <label htmlFor="q" className="sr-only">Question</label>
-          <input id="q" value={question} onChange={(e) => setQuestion(e.target.value)} minLength={3} required
-            placeholder="How much did we refund this week?" className="flex-1 rounded-lg border border-stone-300 px-3 py-2" />
-          <button type="submit" disabled={asking} className="rounded-lg bg-terracotta-700 text-white px-4 disabled:opacity-60">
-            {asking ? "Asking…" : "Ask"}
-          </button>
-        </form>
-        {copilotError && <ErrorState title="Copilot unavailable" message={copilotError} />}
-        {answer && (
-          <div aria-live="polite" className="text-sm space-y-2">
-            <p className={answer.grounded ? "" : "text-amber-900"}>{answer.answer}</p>
-            <details>
-              <summary className="cursor-pointer text-stone-700">Where these figures come from</summary>
-              <pre className="mt-2 bg-stone-50 p-3 rounded-lg overflow-x-auto text-xs">{JSON.stringify(answer.trace, null, 2)}</pre>
-            </details>
-          </div>
-        )}
-      </section>
+        <div className="space-y-6">
+          <section aria-labelledby="approvals" className="rounded-[24px] bg-board-sunk p-5">
+            <h2 id="approvals" className="text-[20px] font-bold tracking-[-0.02em]">
+              Refunds to approve
+            </h2>
+            {pending.length === 0 ? (
+              <p className="mt-2 text-[15px] text-ink-muted">Nothing waiting. Refunds above the auto-refund limit land here.</p>
+            ) : (
+              <ul className="mt-2 divide-y divide-board-line">
+                {pending.map((a) => (
+                  <li key={a.id} className="py-4 text-[15px]">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="font-semibold">Ticket #{a.order_id.slice(-4).toUpperCase()}</span>
+                      <span className="font-mono tabular font-bold">{money(a.amount_cents)}</span>
+                    </div>
+                    <p className="mt-1 text-[13px] text-ink-muted">{a.reason}</p>
+                    <div className="mt-3 flex gap-2">
+                      <button type="button" onClick={() => decide(a.id, true)} className="btn-press flex-1 min-h-[44px] rounded-full bg-ink text-white font-semibold">
+                        Refund {money(a.amount_cents)}
+                      </button>
+                      <button type="button" onClick={() => decide(a.id, false)} className="btn-press min-h-[44px] rounded-full border border-board-line bg-white px-4 font-semibold">
+                        Decline
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section aria-labelledby="copilot" className="rounded-[24px] border border-board-line p-5">
+            <h2 id="copilot" className="text-[20px] font-bold tracking-[-0.02em]">
+              Ask about the money
+            </h2>
+            <p className="mt-1 text-[14px] text-ink-muted">Read-only. Every figure comes from your ledger or PayPal, or the answer is withheld.</p>
+            <form
+              className="mt-4 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void ask(question);
+              }}
+            >
+              <label htmlFor="q" className="sr-only">
+                Question
+              </label>
+              <input
+                id="q"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Ask about takings or refunds"
+                className="min-w-0 flex-1 min-h-[44px] rounded-full border border-board-line bg-white px-4 text-[15px] placeholder:text-ink-muted"
+              />
+              <button type="submit" disabled={asking} className="btn-press min-h-[44px] rounded-full bg-ink px-5 text-white font-semibold disabled:opacity-60">
+                {asking ? "Asking…" : "Ask"}
+              </button>
+            </form>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button key={s} type="button" onClick={() => ask(s)} className="min-h-[36px] rounded-full bg-board-sunk px-3 text-[13px] font-medium hover:bg-board-line">
+                  {s}
+                </button>
+              ))}
+            </div>
+            {copilotError && (
+              <div className="mt-4">
+                <ErrorState title="The copilot couldn't answer" message={copilotError} />
+              </div>
+            )}
+            {answer && (
+              <div aria-live="polite" className="mt-4 space-y-2">
+                <p className={`text-[16px] leading-relaxed ${answer.grounded ? "" : "text-pending"}`}>{answer.answer}</p>
+                <details className="text-[13px]">
+                  <summary className="cursor-pointer font-semibold min-h-[32px]">Where the figures come from</summary>
+                  <pre className="mt-2 max-h-64 overflow-auto rounded-xl bg-board-sunk p-3 font-mono text-[12px]">{JSON.stringify(answer.trace, null, 2)}</pre>
+                </details>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

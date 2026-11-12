@@ -1,12 +1,12 @@
 "use client";
 
-import { AlertTriangle, Inbox, Loader2, WifiOff } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { StreamStatus } from "@/lib/useEventStream";
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+export function Loading({ label = "Loading…", dark = false }: { label?: string; dark?: boolean }) {
   return (
-    <div role="status" aria-live="polite" className="flex items-center gap-2 py-10 justify-center text-stone-600 text-sm">
+    <div role="status" aria-live="polite" className={`flex items-center gap-2 py-12 justify-center text-[15px] ${dark ? "text-steel-200" : "text-ink-muted"}`}>
       <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
       <span>{label}</span>
     </div>
@@ -15,41 +15,39 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 
 export function ErrorState({ title, message, action }: { title: string; message: string; action?: ReactNode }) {
   return (
-    <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-900 space-y-2">
-      <div className="flex items-center gap-2 font-semibold">
+    <div role="alert" className="rounded-2xl bg-declined-soft p-5 text-[15px] text-declined space-y-2">
+      <div className="flex items-center gap-2 font-bold">
         <AlertTriangle className="w-4 h-4" aria-hidden />
         {title}
       </div>
-      <p>{message}</p>
+      <p className="text-ink-soft">{message}</p>
       {action}
     </div>
   );
 }
 
-export function Empty({ title, message, dark = false }: { title: string; message: string; dark?: boolean }) {
+export function Empty({ title, message, dark = false, children }: { title: string; message: string; dark?: boolean; children?: ReactNode }) {
   return (
-    <div className={`py-14 text-center space-y-2 ${dark ? "text-stone-300" : "text-stone-600"}`}>
-      <Inbox className="w-8 h-8 mx-auto opacity-70" aria-hidden />
-      <h2 className={`font-semibold ${dark ? "text-white" : "text-stone-900"}`}>{title}</h2>
-      <p className="text-sm max-w-sm mx-auto">{message}</p>
+    <div className={`py-16 text-center space-y-2 ${dark ? "text-steel-200" : "text-ink-muted"}`}>
+      <h2 className={`text-[22px] font-bold tracking-[-0.02em] ${dark ? "text-white" : "text-ink"}`}>{title}</h2>
+      <p className="text-[15px] max-w-sm mx-auto">{message}</p>
+      {children}
     </div>
   );
 }
 
 export function LiveBadge({ status, dark = false }: { status: StreamStatus; dark?: boolean }) {
-  const text =
-    status === "live" ? "Live" : status === "connecting" ? "Connecting…" : status === "reconnecting" ? "Reconnecting…" : "Offline";
-  const color =
-    status === "live"
-      ? "bg-emerald-100 text-emerald-900 border-emerald-300"
-      : "bg-amber-100 text-amber-900 border-amber-300";
+  const live = status === "live";
+  const text = live ? "Live" : status === "connecting" ? "Connecting" : status === "reconnecting" ? "Reconnecting" : "Offline";
   return (
     <span
       role="status"
       aria-live="polite"
-      className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${color} ${dark ? "" : ""}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[13px] font-semibold ${
+        dark ? "bg-steel-800 text-steel-200" : "bg-board-sunk text-ink-soft"
+      }`}
     >
-      {status === "live" ? <span className="w-2 h-2 rounded-full bg-emerald-600" aria-hidden /> : <WifiOff className="w-3 h-3" aria-hidden />}
+      <span aria-hidden className={`w-2 h-2 rounded-full ${live ? "bg-paid" : "bg-pending animate-pulse"}`} />
       {text}
     </span>
   );
@@ -57,14 +55,28 @@ export function LiveBadge({ status, dark = false }: { status: StreamStatus; dark
 
 export function StateBadge({ state, label, tone }: { state: string; label: string; tone: "ok" | "wait" | "bad" | "info" }) {
   const cls = {
-    ok: "bg-emerald-100 text-emerald-900",
-    wait: "bg-amber-100 text-amber-900",
-    bad: "bg-red-100 text-red-900",
-    info: "bg-stone-200 text-stone-800",
+    ok: "bg-paid-soft text-paid",
+    wait: "bg-pending-soft text-pending",
+    bad: "bg-declined-soft text-declined",
+    info: "bg-board-sunk text-ink-soft",
   }[tone];
   return (
-    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`} title={state}>
+    <span className={`inline-flex h-auto items-center rounded-full px-2.5 py-1 text-[13px] leading-none font-semibold ${cls}`} title={state}>
       {label}
     </span>
+  );
+}
+
+export function PayPalButton({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="btn-press flex items-center justify-center gap-2 rounded-full bg-paypal-yellow text-paypal-blue min-h-[48px] px-5 font-bold text-[16px] hover:brightness-95"
+    >
+      Pay with PayPal
+      <span className="sr-only">(opens PayPal in a new tab)</span>
+    </a>
   );
 }

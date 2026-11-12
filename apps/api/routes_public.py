@@ -245,7 +245,7 @@ def _public_order(order: OrderModel) -> dict[str, Any]:
         "pickup_at": order.pickup_at.isoformat() + "Z" if order.pickup_at else None,
         "approval_url": order.approval_url if order.state == "LINK_SENT" else None,
         "updated_at": order.updated_at.isoformat() + "Z",
-        "lines": [{"name": line.name, "qty": line.qty, "line_total_cents": line.line_total_cents,
+        "lines": [{"item_id": line.item_id, "name": line.name, "qty": line.qty, "line_total_cents": line.line_total_cents,
                    "modifiers": [m["name"] for m in json.loads(line.modifiers_json or "[]")]} for line in order.lines],
     }
 

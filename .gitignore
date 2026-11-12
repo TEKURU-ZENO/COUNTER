@@ -38,3 +38,10 @@ Thumbs.db
 *.db-shm
 *.db-wal
 apps/web/.env.local
+
+# Installed agent skills (reinstall: npx skills add Leonxlnx/taste-skill; npx impeccable install --project)
+.agents/
+.claude/skills/
+.claude/agents/
+.github/skills/
+.github/agents/

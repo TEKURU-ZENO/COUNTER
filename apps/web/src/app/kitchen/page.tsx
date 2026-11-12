@@ -1,19 +1,25 @@
 "use client";
 
-import { Check, ChefHat, Flame } from "lucide-react";
+import { Check, Flame } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { RequireMerchant } from "@/components/RequireMerchant";
 import { Empty, ErrorState, LiveBadge, Loading } from "@/components/States";
+import { Ticket } from "@/components/Ticket";
 import { api, ApiError, type Order } from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 
-// Only paid orders appear here: CAPTURED and IN_KITCHEN. PAYMENT_PENDING never does.
+// Only orders PayPal has captured. PAYMENT_PENDING never reaches this screen.
 const KITCHEN_STATES = "CAPTURED,IN_KITCHEN";
+
+const time = (iso: string | null | undefined) =>
+  iso ? new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "ASAP";
+const ago = (iso?: string) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : 0);
 
 function Kitchen() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [, tick] = useState(0);
 
   const load = useCallback(() => {
     api<Order[]>(`/api/v1/merchant/orders?state=${KITCHEN_STATES}`)
@@ -25,6 +31,10 @@ function Kitchen() {
   }, []);
 
   useEffect(load, [load]);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const status = useEventStream("/api/v1/merchant/stream", load);
 
   async function act(id: string, action: "kitchen_accept" | "mark_ready") {
@@ -39,62 +49,68 @@ function Kitchen() {
     }
   }
 
+  const waiting = orders?.filter((o) => o.state === "CAPTURED").length ?? 0;
+  const cooking = orders?.filter((o) => o.state === "IN_KITCHEN").length ?? 0;
+
   return (
-    <div className="min-h-[calc(100vh-3.5rem)] bg-charcoal-950 text-white p-6 space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
-          <ChefHat className="w-6 h-6" aria-hidden /> Kitchen
-        </h1>
-        <div className="flex items-center gap-3 text-sm text-stone-300">
-          <span>Paid orders only</span>
+    <div className="min-h-[calc(100vh-4rem)] bg-steel-950 text-white">
+      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[clamp(30px,3.6vw,48px)] font-extrabold tracking-[-0.04em] leading-none">The pass</h1>
+            <p className="mt-2 text-[16px] text-steel-200">
+              {orders === null ? "Loading tickets" : `${waiting} to start · ${cooking} cooking`} · paid orders only
+            </p>
+          </div>
           <LiveBadge status={status} dark />
         </div>
+
+        {error && (
+          <div className="mt-6">
+            <ErrorState title="The kitchen screen lost its data" message={error} />
+          </div>
+        )}
+
+        <div className="rail rail-dark mt-8" aria-hidden />
+        {orders === null ? (
+          <Loading label="Hanging tickets…" dark />
+        ) : orders.length === 0 ? (
+          <Empty dark title="Rail's clear" message="A ticket drops here the moment PayPal confirms a payment." />
+        ) : (
+          <ul className="columns-1 sm:columns-2 xl:columns-4 gap-6 pt-1">
+            {orders.map((o) => {
+              const cookingNow = o.state === "IN_KITCHEN";
+              return (
+                <li key={o.id} className="break-inside-avoid mb-6 px-1 pt-3">
+                  <Ticket
+                    large
+                    number={`#${o.id.slice(-4).toUpperCase()}`}
+                    state={o.state}
+                    lines={o.lines}
+                    meta={
+                      <span className="font-mono tabular">
+                        Pickup {time(o.pickup_at)} · placed {ago(o.created_at)} min ago
+                      </span>
+                    }
+                  >
+                    <button
+                      type="button"
+                      disabled={acting === o.id}
+                      onClick={() => act(o.id, cookingNow ? "mark_ready" : "kitchen_accept")}
+                      className={`btn-press mt-5 w-full min-h-[56px] rounded-full font-bold text-[17px] flex items-center justify-center gap-2 disabled:opacity-60 ${
+                        cookingNow ? "bg-paid text-white" : "bg-ink text-white"
+                      }`}
+                    >
+                      {cookingNow ? <Check className="w-5 h-5" aria-hidden /> : <Flame className="w-5 h-5" aria-hidden />}
+                      {cookingNow ? "Ready for pickup" : "Start cooking"}
+                    </button>
+                  </Ticket>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
-      {error && <ErrorState title="Kitchen display problem" message={error} />}
-      {orders === null ? (
-        <div className="text-stone-300"><Loading label="Loading tickets…" /></div>
-      ) : orders.length === 0 ? (
-        <Empty dark title="No tickets" message="Paid orders appear here the moment PayPal confirms the capture." />
-      ) : (
-        <ul className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {orders.map((o) => (
-            <li key={o.id} className={`rounded-2xl border p-5 bg-stone-900 ${o.state === "IN_KITCHEN" ? "border-sky-500" : "border-terracotta-500"}`}>
-              <div className="flex justify-between text-sm text-stone-300">
-                <span className="font-mono">#{o.id.slice(-6)}</span>
-                <span>
-                  Pickup{" "}
-                  <strong className="text-white">
-                    {o.pickup_at ? new Date(o.pickup_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "ASAP"}
-                  </strong>
-                </span>
-              </div>
-              <ul className="my-4 space-y-2">
-                {o.lines.map((l, i) => (
-                  <li key={i}>
-                    <span className="text-lg font-bold">
-                      <span className="text-terracotta-300 font-mono">{l.qty}×</span> {l.name}
-                    </span>
-                    {l.modifiers.map((m) => (
-                      <div key={m} className="pl-6 text-sm text-amber-200">+ {m}</div>
-                    ))}
-                  </li>
-                ))}
-              </ul>
-              {o.state === "CAPTURED" ? (
-                <button type="button" disabled={acting === o.id} onClick={() => act(o.id, "kitchen_accept")}
-                  className="w-full rounded-xl bg-terracotta-700 py-3 font-bold flex items-center justify-center gap-2 disabled:opacity-60">
-                  <Flame className="w-4 h-4" aria-hidden /> Start cooking
-                </button>
-              ) : (
-                <button type="button" disabled={acting === o.id} onClick={() => act(o.id, "mark_ready")}
-                  className="w-full rounded-xl bg-emerald-700 py-3 font-bold flex items-center justify-center gap-2 disabled:opacity-60">
-                  <Check className="w-4 h-4" aria-hidden /> Mark ready
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

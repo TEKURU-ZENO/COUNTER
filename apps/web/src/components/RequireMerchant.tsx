@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
-import { api, ApiError } from "@/lib/api";
+import { type ReactNode, useEffect, useState } from "react";
+import { api, type ApiError } from "@/lib/api";
 import { ErrorState, Loading } from "./States";
 
 export function RequireMerchant({ children }: { children: ReactNode }) {
@@ -23,11 +23,11 @@ export function RequireMerchant({ children }: { children: ReactNode }) {
       });
   }, [router]);
 
-  if (state === "checking") return <Loading label="Checking your session…" />;
+  if (state === "checking") return <Loading label="Checking your sign-in…" />;
   if (state === "error")
     return (
       <div className="max-w-xl mx-auto p-6">
-        <ErrorState title="Can't load the merchant area" message={message} />
+        <ErrorState title="The restaurant area isn't reachable" message={message} />
       </div>
     );
   return <>{children}</>;
