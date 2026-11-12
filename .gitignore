@@ -45,3 +45,6 @@ apps/web/.env.local
 .claude/agents/
 .github/skills/
 .github/agents/
+
+# Recorded demo clips
+video/
