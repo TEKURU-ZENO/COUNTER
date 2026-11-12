@@ -1,48 +1,33 @@
-"""
-Database Engine & Session Management for COUNTER.
-Provides async engine and session factory for both PostgreSQL and SQLite.
-"""
+"""Engine and session factory. Constructed once per process by the container, never at import time."""
 
 from __future__ import annotations
 
-import os
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
 from apps.api.db.models import Base
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./counter.db")
 
-# Convert standard postgresql:// to postgresql+asyncpg:// if needed
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+def make_engine(url: str) -> AsyncEngine:
+    if url.startswith("sqlite"):
+        engine = create_async_engine(url, connect_args={"timeout": 30})
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True,
-)
+        @event.listens_for(engine.sync_engine, "connect")
+        def _sqlite_pragmas(dbapi_conn, _record):  # type: ignore[no-untyped-def]
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+        return engine
+    return create_async_engine(url, pool_pre_ping=True, pool_size=10, max_overflow=10)
 
 
-async def init_db() -> None:
-    """Initialize database tables."""
+def make_session_maker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def create_schema(engine: AsyncEngine) -> None:
+    """Create tables. A migration tool (Alembic) is still on the limitations list."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-
-async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency yielding an async database session."""
-    async with async_session_maker() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
