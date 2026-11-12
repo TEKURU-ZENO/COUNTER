@@ -3,20 +3,18 @@ import { Navbar } from "@/components/Navbar";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "COUNTER — AI Phone Agent for Independent Takeaways",
-  description: "An AI phone agent for independent takeaway restaurants that takes the order and moves money through PayPal before the caller hangs up. Only paid orders reach the kitchen.",
+  title: "COUNTER",
+  description: "Phone ordering for independent takeaways, paid through PayPal before the kitchen starts.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full bg-cream-50">
-      <body className="h-full flex flex-col font-sans antialiased text-stone-900">
+      <body className="min-h-full flex flex-col font-sans antialiased text-stone-900">
         <Navbar />
-        <main className="flex-1">{children}</main>
+        <main id="main" className="flex-1">
+          {children}
+        </main>
       </body>
     </html>
   );

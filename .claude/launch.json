@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "apps.api.main:create_app", "--factory", "--port", "8010"],
+      "port": 8010,
+      "autoPort": false
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/web", "run", "dev", "--", "-p", "3010"],
+      "port": 3010,
+      "autoPort": false
+    }
+  ]
+}
