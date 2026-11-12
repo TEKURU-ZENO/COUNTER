@@ -14,6 +14,7 @@ first token is measured from the stream, not estimated.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -180,6 +181,12 @@ def to_openai_messages(system: str, messages: Sequence[dict[str, Any]]) -> list[
     return out
 
 
+class RateLimitedError(RuntimeError):
+    def __init__(self, retry_after: float):
+        super().__init__(f"rate limited; retry after {retry_after:.1f}s")
+        self.retry_after = retry_after
+
+
 class OpenAICompatibleLLM:
     """Works with OpenAI, Groq and other chat-completions-compatible endpoints."""
 
@@ -223,6 +230,16 @@ class OpenAICompatibleLLM:
                 body["tool_choice"] = "none"
             elif tool_choice:
                 body["tool_choice"] = {"type": "function", "function": {"name": tool_choice}}
+        for attempt in range(6):
+            try:
+                return await self._stream_once(body)
+            except RateLimitedError as exc:
+                if attempt == 5:
+                    raise
+                await asyncio.sleep(min(exc.retry_after, 30.0))
+        raise AssertionError("unreachable")
+
+    async def _stream_once(self, body: dict[str, Any]) -> LLMResult:
         t0 = time.perf_counter()
         ttft: int | None = None
         text: list[str] = []
@@ -233,6 +250,17 @@ class OpenAICompatibleLLM:
         async with self._http.stream(
             "POST", self._url, json=body, headers={"Authorization": f"Bearer {self._key}"}, timeout=60.0
         ) as resp:
+            if resp.status_code == 429:
+                detail = (await resp.aread()).decode("utf-8", "replace")
+                header = resp.headers.get("retry-after", "")
+                hint = re.search(r"try again in ([0-9.]+)(ms|s)", detail)
+                if header.replace(".", "", 1).isdigit():
+                    seconds = float(header)
+                elif hint:
+                    seconds = float(hint.group(1)) / (1000 if hint.group(2) == "ms" else 1)
+                else:
+                    seconds = 2.0
+                raise RateLimitedError(seconds + 0.25)
             if resp.status_code >= 400:
                 detail = (await resp.aread())[:300]
                 raise RuntimeError(f"LLM HTTP {resp.status_code}: {detail!r}")

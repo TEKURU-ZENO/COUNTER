@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    env:
+      PAYPAL_MODE: mock
+      ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install locked dependencies
+        run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+      - name: Ruff
+        run: ruff check apps packages tests harness infra
+      - name: Mypy (strict on packages/domain)
+        run: mypy packages/domain
+      - name: Tests with domain coverage gate
+        run: pytest --cov --cov-report=term-missing
+      - name: Deterministic harness (mock gateway)
+        run: python -m harness.deterministic
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-report
+          path: harness/reports/deterministic.md
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: counter
+          POSTGRES_PASSWORD: counter
+          POSTGRES_DB: counter_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U counter" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PAYPAL_MODE: mock
+      ENVIRONMENT: test
+      TEST_POSTGRES_URL: postgresql://counter:counter@localhost:5432/counter_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+      - name: Postgres tests (slot contention, full flow)
+        run: pytest -m postgres -o addopts="" tests/test_postgres.py
+      - name: Slot load test, 200 concurrent callers
+        run: python -m harness.load_test --database-url "$TEST_POSTGRES_URL" --callers 200 --capacity 8
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build

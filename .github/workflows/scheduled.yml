@@ -1,0 +1,61 @@
+name: Scheduled checks
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"  # Mondays 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      sandbox:
+        description: "Also run the real PayPal sandbox suite"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    env:
+      PAYPAL_MODE: mock
+      ENVIRONMENT: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+      - name: Mutation testing on the domain package
+        run: mutmut run || true
+      - name: Mutation results
+        run: mutmut results | tee mutmut.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mutmut
+          path: mutmut.txt
+
+  sandbox:
+    if: github.event_name == 'workflow_dispatch' && inputs.sandbox
+    runs-on: ubuntu-latest
+    environment: paypal-sandbox
+    env:
+      PAYPAL_MODE: sandbox
+      ENVIRONMENT: test
+      PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+      PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+      PAYPAL_WEBHOOK_ID: ${{ secrets.PAYPAL_WEBHOOK_ID }}
+      PAYPAL_SANDBOX_BUYER_EMAIL: ${{ secrets.PAYPAL_SANDBOX_BUYER_EMAIL }}
+      PAYPAL_SANDBOX_BUYER_PASSWORD: ${{ secrets.PAYPAL_SANDBOX_BUYER_PASSWORD }}
+      KERNEL_API_KEY: ${{ secrets.KERNEL_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt && pip install kernel
+      - run: python -m playwright install --with-deps chromium
+      - run: pytest -m sandbox -o addopts="" tests/sandbox -s
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-report
+          path: harness/reports/sandbox.md

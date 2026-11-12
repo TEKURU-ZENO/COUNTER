@@ -52,7 +52,7 @@ def _missing(value: str | SecretStr | None) -> bool:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False, env_ignore_empty=True)
 
     environment: Environment = Environment.DEVELOPMENT
     log_level: str = "INFO"
