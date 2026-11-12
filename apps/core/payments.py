@@ -21,7 +21,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -39,7 +39,7 @@ from packages.domain.models import (
     QuoteLine,
     ShopPolicy,
 )
-from packages.domain.money import PayPalLine, value_to_cents, MoneyError
+from packages.domain.money import MoneyError, PayPalLine, value_to_cents
 from packages.domain.reconcile import CaptureOutcome, reconcile_capture
 from packages.paypal_gateway.types import PayPalError, PayPalGateway, approval_link, extract_capture
 
@@ -52,8 +52,8 @@ DEFAULT_MANDATE_CAP_CENTS = 5000
 class FlowResult:
     ok: bool
     reason: str = ""
-    order_id: Optional[str] = None
-    state: Optional[str] = None
+    order_id: str | None = None
+    state: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -98,7 +98,7 @@ class PaymentService:
         session_maker: async_sessionmaker[AsyncSession],
         paypal: PayPalGateway,
         settings: Settings,
-        policy: Optional[ShopPolicy] = None,
+        policy: ShopPolicy | None = None,
     ):
         self.sm = session_maker
         self.paypal = paypal
@@ -107,7 +107,7 @@ class PaymentService:
 
     # ------------------------------------------------------------------ helpers
 
-    async def _slot_for(self, repo: OrderRepository, order: OrderModel) -> tuple[Optional[str], bool]:
+    async def _slot_for(self, repo: OrderRepository, order: OrderModel) -> tuple[str | None, bool]:
         if order.pickup_slot_id:
             return order.pickup_slot_id, True
         prep_minutes = 15
@@ -234,7 +234,7 @@ class PaymentService:
         *,
         source: str,
         trigger: str,
-        mandate_id: Optional[str] = None,
+        mandate_id: str | None = None,
     ) -> OrderModel:
         facts = extract_capture(response)
         if facts is None:
@@ -296,7 +296,7 @@ class PaymentService:
         return order
 
     async def _flag(
-        self, repo: OrderRepository, order: OrderModel, reason: str, meta: Optional[dict[str, Any]] = None
+        self, repo: OrderRepository, order: OrderModel, reason: str, meta: dict[str, Any] | None = None
     ) -> OrderModel:
         logger.error("RECONCILIATION ALERT order=%s: %s", order.id, reason)
         if not can_transition(OrderState(order.state), OrderAction.FLAG_REVIEW):
@@ -378,7 +378,7 @@ class PaymentService:
 
     # ------------------------------------------------------------------ cancel / refund
 
-    async def cancel_unpaid(self, order_id: str, *, actor: ActorType, actor_id: Optional[str] = None) -> FlowResult:
+    async def cancel_unpaid(self, order_id: str, *, actor: ActorType, actor_id: str | None = None) -> FlowResult:
         async with self.sm() as session, session.begin():
             repo = OrderRepository(session)
             order = await repo.get_order(order_id)
@@ -447,7 +447,7 @@ class PaymentService:
                                           request_id=f"approval:{approval_id}", reason="Approved refund")
 
     async def _execute_refund(
-        self, order_id: str, amount: int, *, source: str, approved_by: Optional[str], request_id: str, reason: str
+        self, order_id: str, amount: int, *, source: str, approved_by: str | None, request_id: str, reason: str
     ) -> FlowResult:
         async with self.sm() as session:
             repo = OrderRepository(session)
@@ -492,7 +492,7 @@ class PaymentService:
         resp: dict[str, Any],
         currency: str,
         source: str,
-        approved_by: Optional[str],
+        approved_by: str | None,
         reason: str,
     ) -> None:
         refund_id = str(resp.get("id", ""))
@@ -604,7 +604,7 @@ class PaymentService:
 
         return "ignored:unhandled_type"
 
-    async def _order_for_capture(self, repo: OrderRepository, capture: dict[str, Any]) -> Optional[OrderModel]:
+    async def _order_for_capture(self, repo: OrderRepository, capture: dict[str, Any]) -> OrderModel | None:
         if capture.get("custom_id"):
             order = await repo.get_order(str(capture["custom_id"]))
             if order:

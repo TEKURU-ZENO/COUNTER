@@ -7,14 +7,13 @@ and frontend TypeScript codegen.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from packages.domain.models import (
     ActorType,
     GuardDecisionKind,
-    OrderAction,
     OrderState,
 )
 
@@ -29,7 +28,7 @@ class CartItemSchema(BaseModel):
     item_id: str
     name: str
     qty: int = Field(gt=0)
-    modifiers: List[ModifierSelectionSchema] = Field(default_factory=list)
+    modifiers: list[ModifierSelectionSchema] = Field(default_factory=list)
 
 
 class MenuItemSchema(BaseModel):
@@ -40,8 +39,8 @@ class MenuItemSchema(BaseModel):
     price_cents: int = Field(ge=0)
     prep_min: int = Field(default=15, ge=1)
     available: bool = True
-    dietary_tags: List[str] = Field(default_factory=list)
-    paypal_product_id: Optional[str] = None
+    dietary_tags: list[str] = Field(default_factory=list)
+    paypal_product_id: str | None = None
 
 
 class ShopPolicySchema(BaseModel):
@@ -61,12 +60,12 @@ class QuoteLineSchema(BaseModel):
     modifiers_delta_cents: int
     unit_total_cents: int
     line_total_cents: int
-    modifiers: List[ModifierSelectionSchema] = Field(default_factory=list)
+    modifiers: list[ModifierSelectionSchema] = Field(default_factory=list)
 
 
 class QuoteResponseSchema(BaseModel):
     shop_id: str
-    lines: List[QuoteLineSchema]
+    lines: list[QuoteLineSchema]
     subtotal_cents: int
     tax_rate_bps: int
     tax_cents: int
@@ -76,11 +75,11 @@ class QuoteResponseSchema(BaseModel):
 
 
 class OrderLineSchema(BaseModel):
-    id: Optional[str] = None
+    id: str | None = None
     item_id: str
     name: str
     qty: int
-    modifiers: List[ModifierSelectionSchema] = Field(default_factory=list)
+    modifiers: list[ModifierSelectionSchema] = Field(default_factory=list)
     line_total_cents: int
 
 
@@ -93,11 +92,11 @@ class OrderResponseSchema(BaseModel):
     subtotal_cents: int
     tax_cents: int
     total_cents: int
-    quote_hash: Optional[str] = None
-    pickup_at: Optional[datetime] = None
-    paypal_order_id: Optional[str] = None
+    quote_hash: str | None = None
+    pickup_at: datetime | None = None
+    paypal_order_id: str | None = None
     created_at: datetime
-    lines: List[OrderLineSchema] = Field(default_factory=list)
+    lines: list[OrderLineSchema] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -121,7 +120,7 @@ class ToolInvocationSchema(BaseModel):
     args: dict[str, Any]
     guard_decision: GuardDecisionKind
     reason: str
-    result: Optional[dict[str, Any]] = None
+    result: dict[str, Any] | None = None
     latency_ms: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -129,7 +128,7 @@ class ToolInvocationSchema(BaseModel):
 class PaymentRecordSchema(BaseModel):
     order_id: str
     paypal_order_id: str
-    capture_id: Optional[str] = None
+    capture_id: str | None = None
     status: str
     amount_cents: int
     fee_cents: int = 0
@@ -140,11 +139,11 @@ class RefundRecordSchema(BaseModel):
     id: str
     order_id: str
     capture_id: str
-    paypal_refund_id: Optional[str] = None
+    paypal_refund_id: str | None = None
     amount_cents: int
     reason: str
     status: str
-    approved_by: Optional[str] = None
+    approved_by: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -156,14 +155,14 @@ class ApprovalRequestSchema(BaseModel):
     reason: str
     status: str  # PENDING, APPROVED, REJECTED
     requested_at: datetime
-    decided_by: Optional[str] = None
-    decided_at: Optional[datetime] = None
+    decided_by: str | None = None
+    decided_at: datetime | None = None
 
 
 class SendPaymentLinkRequest(BaseModel):
     order_id: str
     quote_hash: str
-    pickup_slot_id: Optional[str] = None
+    pickup_slot_id: str | None = None
 
 
 class SendPaymentLinkResponse(BaseModel):

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, AsyncIterator, Callable, Optional
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from sqlalchemy import select
 
@@ -29,7 +30,7 @@ def _format(event: dict[str, Any]) -> str:
 async def event_stream(
     c: Container,
     *,
-    last_event_id: Optional[str],
+    last_event_id: str | None,
     accept: Callable[[dict[str, Any]], bool],
     heartbeat: float = HEARTBEAT_SECONDS,
 ) -> AsyncIterator[str]:
@@ -57,7 +58,7 @@ async def event_stream(
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=heartbeat)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": keepalive\n\n"
                 continue
             if last_id is not None and int(event["id"]) <= last_id:

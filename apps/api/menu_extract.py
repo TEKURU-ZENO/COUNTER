@@ -115,7 +115,7 @@ async def extract_menu(c: Container, image: bytes, media_type: str) -> dict[str,
     try:
         parsed = _Menu.model_validate(payload)
     except ValidationError as exc:
-        raise ExtractionUnavailable(f"The model's output did not match the menu schema: {exc.error_count()} errors")
+        raise ExtractionUnavailable(f"The model's output did not match the menu schema: {exc.error_count()} errors") from None
     items = validate_items(parsed.items)
     draft_id = f"draft_{uuid.uuid4().hex[:12]}"
     async with c.session_maker() as session, session.begin():

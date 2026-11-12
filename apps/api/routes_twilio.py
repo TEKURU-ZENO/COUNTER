@@ -12,7 +12,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-from typing import Optional
 from xml.sax.saxutils import escape, quoteattr
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -42,7 +41,7 @@ async def _verified_form(request: Request, c: Container) -> dict[str, str]:
     return form
 
 
-def _twiml(c: Container, call_id: str, speech: str, *, ended: bool, handoff: Optional[str]) -> Response:
+def _twiml(c: Container, call_id: str, speech: str, *, ended: bool, handoff: str | None) -> Response:
     say = f"<Say>{escape(speech)}</Say>"
     if handoff and c.settings.human_handoff_number:
         body = f"{say}<Dial>{escape(c.settings.human_handoff_number)}</Dial>"

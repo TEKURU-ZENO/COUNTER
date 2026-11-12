@@ -18,8 +18,9 @@ import asyncio
 import contextlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable, Awaitable, Optional
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -35,7 +36,7 @@ EventSink = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 class CounterWorker:
-    def __init__(self, container: Container, extra_sinks: Optional[list[EventSink]] = None):
+    def __init__(self, container: Container, extra_sinks: list[EventSink] | None = None):
         self.c = container
         self.extra_sinks: list[EventSink] = list(extra_sinks or [])
         self._stop = asyncio.Event()
@@ -81,7 +82,7 @@ class CounterWorker:
             logger.exception("Webhook %s (%s) failed", event_id, event_type)
             await self._mark(event_id, "RETRY", repr(exc)[:500], failed=True)
 
-    async def _order_by_paypal_id(self, paypal_order_id: str) -> Optional[OrderModel]:
+    async def _order_by_paypal_id(self, paypal_order_id: str) -> OrderModel | None:
         async with self.c.session_maker() as session:
             return await OrderRepository(session).get_order_by_paypal_id(paypal_order_id)
 

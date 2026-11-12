@@ -8,8 +8,9 @@ its outbox row and (for webhooks) the webhook status update commit together or n
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -53,7 +54,7 @@ class RepositoryError(Exception):
 
 
 class OptimisticLockConflictError(RepositoryError):
-    def __init__(self, order_id: str, expected_version: int, current_version: Optional[int] = None):
+    def __init__(self, order_id: str, expected_version: int, current_version: int | None = None):
         self.order_id = order_id
         self.expected_version = expected_version
         self.current_version = current_version
@@ -100,14 +101,14 @@ class OrderRepository:
 
     # ------------------------------------------------------------------ orders
 
-    async def get_order(self, order_id: str) -> Optional[OrderModel]:
+    async def get_order(self, order_id: str) -> OrderModel | None:
         return await self.session.get(OrderModel, order_id, populate_existing=True)
 
-    async def get_order_by_paypal_id(self, paypal_order_id: str) -> Optional[OrderModel]:
+    async def get_order_by_paypal_id(self, paypal_order_id: str) -> OrderModel | None:
         res = await self.session.execute(select(OrderModel).where(OrderModel.paypal_order_id == paypal_order_id))
         return res.scalar_one_or_none()
 
-    async def latest_order_for_caller(self, caller_hash: str, shop_id: str) -> Optional[OrderModel]:
+    async def latest_order_for_caller(self, caller_hash: str, shop_id: str) -> OrderModel | None:
         res = await self.session.execute(
             select(OrderModel)
             .where(OrderModel.caller_hash == caller_hash, OrderModel.shop_id == shop_id)
@@ -117,7 +118,7 @@ class OrderRepository:
         return res.scalar_one_or_none()
 
     async def create_order(
-        self, *, order_id: str, shop_id: str, call_id: Optional[str], caller_hash: str, currency: str
+        self, *, order_id: str, shop_id: str, call_id: str | None, caller_hash: str, currency: str
     ) -> OrderModel:
         order = OrderModel(
             id=order_id,
@@ -174,9 +175,9 @@ class OrderRepository:
         expected_version: int,
         action: OrderAction,
         actor: ActorType,
-        payload: Optional[dict[str, Any]] = None,
+        payload: dict[str, Any] | None = None,
         *,
-        actor_id: Optional[str] = None,
+        actor_id: str | None = None,
         **fields: Any,
     ) -> OrderModel:
         """UPDATE ... WHERE id=:id AND version=:expected. Exactly one concurrent writer wins."""
@@ -217,8 +218,8 @@ class OrderRepository:
         payload: dict[str, Any],
         actor: ActorType,
         *,
-        actor_id: Optional[str] = None,
-        state: Optional[OrderState] = None,
+        actor_id: str | None = None,
+        state: OrderState | None = None,
     ) -> None:
         seq = (
             await self.session.scalar(
@@ -255,7 +256,7 @@ class OrderRepository:
 
     # ------------------------------------------------------------------ pickup slots
 
-    async def next_slot_with_capacity(self, shop_id: str, not_before: datetime) -> Optional[PickupSlotModel]:
+    async def next_slot_with_capacity(self, shop_id: str, not_before: datetime) -> PickupSlotModel | None:
         res = await self.session.execute(
             select(PickupSlotModel)
             .where(
@@ -278,7 +279,7 @@ class OrderRepository:
         )
         return bool(res.rowcount)  # type: ignore[attr-defined]
 
-    async def release_slot(self, slot_id: Optional[str]) -> None:
+    async def release_slot(self, slot_id: str | None) -> None:
         if not slot_id:
             return
         await self.session.execute(
@@ -290,13 +291,13 @@ class OrderRepository:
 
     # ------------------------------------------------------------------ ledger
 
-    async def payment_for_order(self, order_id: str) -> Optional[PaymentModel]:
+    async def payment_for_order(self, order_id: str) -> PaymentModel | None:
         res = await self.session.execute(
             select(PaymentModel).where(PaymentModel.order_id == order_id).order_by(PaymentModel.created_at.desc())
         )
         return res.scalars().first()
 
-    async def payment_by_capture(self, capture_id: str) -> Optional[PaymentModel]:
+    async def payment_by_capture(self, capture_id: str) -> PaymentModel | None:
         res = await self.session.execute(select(PaymentModel).where(PaymentModel.capture_id == capture_id))
         return res.scalar_one_or_none()
 
@@ -309,9 +310,9 @@ class OrderRepository:
         status: str,
         amount_cents: int,
         currency: str,
-        fee_cents: Optional[int],
+        fee_cents: int | None,
         source: str,
-        mandate_id: Optional[str] = None,
+        mandate_id: str | None = None,
     ) -> PaymentModel:
         existing = await self.payment_by_capture(capture_id)
         if existing:
@@ -344,7 +345,7 @@ class OrderRepository:
         )
         return int(total or 0)
 
-    async def refund_by_paypal_id(self, paypal_refund_id: str) -> Optional[RefundModel]:
+    async def refund_by_paypal_id(self, paypal_refund_id: str) -> RefundModel | None:
         res = await self.session.execute(select(RefundModel).where(RefundModel.paypal_refund_id == paypal_refund_id))
         return res.scalar_one_or_none()
 
@@ -362,7 +363,7 @@ class OrderRepository:
 
     # ------------------------------------------------------------------ mandates
 
-    async def active_mandate(self, customer_hash: str, shop_id: str) -> Optional[VaultMandateModel]:
+    async def active_mandate(self, customer_hash: str, shop_id: str) -> VaultMandateModel | None:
         res = await self.session.execute(
             select(VaultMandateModel)
             .where(
@@ -382,7 +383,7 @@ class OrderRepository:
         customer_hash: str,
         shop_id: str,
         max_charge_cents: int,
-        source_order_id: Optional[str] = None,
+        source_order_id: str | None = None,
     ) -> VaultMandateModel:
         existing = await self.session.execute(
             select(VaultMandateModel).where(VaultMandateModel.vault_id == vault_id, VaultMandateModel.status == "ACTIVE")
@@ -454,7 +455,7 @@ class OrderRepository:
         await self.session.flush()
         return row
 
-    async def latest_consent(self, order_id: str) -> Optional[ConsentRecord]:
+    async def latest_consent(self, order_id: str) -> ConsentRecord | None:
         res = await self.session.execute(
             select(ConsentEventModel)
             .where(ConsentEventModel.order_id == order_id)
@@ -484,7 +485,7 @@ class OrderRepository:
         )
         await self.session.flush()
 
-    async def open_challenge(self, call_id: str, mandate_id: str) -> Optional[StepUpChallengeModel]:
+    async def open_challenge(self, call_id: str, mandate_id: str) -> StepUpChallengeModel | None:
         res = await self.session.execute(
             select(StepUpChallengeModel)
             .where(
@@ -497,7 +498,7 @@ class OrderRepository:
         )
         return res.scalar_one_or_none()
 
-    async def verified_step_up(self, call_id: str, mandate_id: str) -> Optional[StepUpRecord]:
+    async def verified_step_up(self, call_id: str, mandate_id: str) -> StepUpRecord | None:
         res = await self.session.execute(
             select(StepUpChallengeModel)
             .where(
@@ -520,7 +521,7 @@ class OrderRepository:
         paypal_event_id: str,
         event_type: str,
         raw_payload: str,
-        paypal_create_time: Optional[datetime],
+        paypal_create_time: datetime | None,
     ) -> bool:
         """True if newly stored, False if PayPal already delivered this event id."""
         try:

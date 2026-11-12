@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from enum import Enum
 from functools import lru_cache
-from typing import Optional
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,7 +43,7 @@ class ConfigurationError(RuntimeError):
     """Raised at startup when the configuration is unsafe to run with."""
 
 
-def _missing(value: Optional[str | SecretStr]) -> bool:
+def _missing(value: str | SecretStr | None) -> bool:
     if value is None:
         return True
     raw = value.get_secret_value() if isinstance(value, SecretStr) else value
@@ -60,30 +59,30 @@ class Settings(BaseSettings):
 
     # Storage
     database_url: str = "sqlite+aiosqlite:///./counter.db"
-    redis_url: Optional[str] = None
+    redis_url: str | None = None
     run_worker_in_process: bool = False
 
     # Secrets
     secret_key: SecretStr = SecretStr(DEV_SECRET)
     caller_hash_key: SecretStr = SecretStr(DEV_SECRET + ":caller")
-    service_token: Optional[SecretStr] = None
+    service_token: SecretStr | None = None
 
     # Public URLs. The browser only ever talks to the web origin; Next.js proxies /api.
     web_base_url: str = "http://localhost:3000"
     api_public_url: str = "http://localhost:8000"
 
     # Merchant login (single owner for the demo). Hash via infra/scripts/hash_password.py.
-    owner_email: Optional[str] = None
-    owner_password_hash: Optional[str] = None
+    owner_email: str | None = None
+    owner_password_hash: str | None = None
 
     # PayPal. No default for the mode: it must be chosen.
     paypal_mode: PayPalMode
-    paypal_client_id: Optional[str] = None
-    paypal_client_secret: Optional[SecretStr] = None
-    paypal_webhook_id: Optional[str] = None
-    paypal_partner_attribution_id: Optional[str] = None
-    paypal_sandbox_buyer_email: Optional[str] = None
-    paypal_sandbox_buyer_password: Optional[SecretStr] = None
+    paypal_client_id: str | None = None
+    paypal_client_secret: SecretStr | None = None
+    paypal_webhook_id: str | None = None
+    paypal_partner_attribution_id: str | None = None
+    paypal_sandbox_buyer_email: str | None = None
+    paypal_sandbox_buyer_password: SecretStr | None = None
 
     # Shop defaults
     default_shop_id: str = "shop_counter_demo"
@@ -91,11 +90,11 @@ class Settings(BaseSettings):
     tax_rate_bps: int = 825
 
     # LLM
-    llm_provider: Optional[LLMProvider] = None
-    llm_model: Optional[str] = None
-    vision_model: Optional[str] = None
-    anthropic_api_key: Optional[SecretStr] = None
-    openai_api_key: Optional[SecretStr] = None
+    llm_provider: LLMProvider | None = None
+    llm_model: str | None = None
+    vision_model: str | None = None
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
     openai_base_url: str = "https://api.openai.com/v1"
 
     # Voice-vault identity controls
@@ -104,15 +103,15 @@ class Settings(BaseSettings):
     demo_sms_inbox: bool = False  # shows texted codes in the web demo; refused when deployed live
 
     # Twilio (phone channel and SMS)
-    twilio_account_sid: Optional[str] = None
-    twilio_auth_token: Optional[SecretStr] = None
-    twilio_phone_number: Optional[str] = None
-    human_handoff_number: Optional[str] = None
+    twilio_account_sid: str | None = None
+    twilio_auth_token: SecretStr | None = None
+    twilio_phone_number: str | None = None
+    human_handoff_number: str | None = None
 
     # Integrations
-    zapier_webhook_url: Optional[str] = None
-    zapier_signing_secret: Optional[SecretStr] = None
-    kernel_api_key: Optional[SecretStr] = None
+    zapier_webhook_url: str | None = None
+    zapier_signing_secret: SecretStr | None = None
+    kernel_api_key: SecretStr | None = None
 
     # Abuse controls
     rate_limit_per_minute: int = 30
@@ -142,7 +141,7 @@ class Settings(BaseSettings):
         )
 
     @model_validator(mode="after")
-    def _check_safety(self) -> "Settings":
+    def _check_safety(self) -> Settings:
         problems: list[str] = []
 
         if self.paypal_mode in (PayPalMode.SANDBOX, PayPalMode.LIVE):

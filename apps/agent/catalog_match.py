@@ -11,8 +11,8 @@ Embedding similarity is not implemented: it is listed under limitations.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
 
 from rapidfuzz import fuzz
 
@@ -37,7 +37,7 @@ def phonetic_key(text: str) -> str:
         (r"^kn|^gn|^pn|^wr", lambda m: m.group(0)[1]),
         (r"ph", "f"), (r"gh", "g"), (r"ck", "k"), (r"sch", "sk"), (r"tch", "ch"),
         (r"c(?=[eiy])", "s"), (r"c", "k"), (r"q", "k"), (r"x", "ks"), (r"z", "s"),
-        (r"dg(?=[eiy])", "j"), (r"gi|ge", "j"), (r"v", "f"), (r"th", "t"), (r"w(?![aeiou])", ""),
+        (r"dg(?=[eiy])", "j"), (r"v", "f"), (r"th", "t"), (r"w(?![aeiou])", ""),
         (r"h(?![aeiou])", ""),
     ]
     for pattern, repl in rules:
@@ -54,16 +54,26 @@ class Candidate:
     score: float
 
 
+def _word_similarity(a: str, b: str) -> float:
+    lexical = fuzz.ratio(a, b)
+    pa, pb = phonetic_key(a), phonetic_key(b)
+    phonetic = fuzz.ratio(pa, pb) * 0.95 if pa and pb else 0.0
+    return float(max(lexical, phonetic))
+
+
 def score(spoken: str, name: str) -> float:
+    """How well the caller's words are covered by the item name (0-100).
+
+    Each spoken word is matched to its best word in the name (spelling or sound), and the
+    scores are averaged, so "margarita pizza" covers "Margherita Wood-Fired Pizza" well while
+    extra descriptive words in the menu name do not count against it.
+    """
     a, b = _norm(spoken), _norm(name)
     if not a or not b:
         return 0.0
-    lexical = max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a, b) if len(a) >= 4 else 0.0)
-    pa = " ".join(phonetic_key(w) for w in a.split())
-    pb = " ".join(phonetic_key(w) for w in b.split())
-    phonetic = fuzz.token_set_ratio(pa, pb) if pa and pb else 0.0
-    # Phonetic agreement alone is weaker evidence than spelling agreement.
-    return float(max(lexical, phonetic * 0.95))
+    name_words = b.split()
+    coverage = sum(max(_word_similarity(w, nw) for nw in name_words) for w in a.split()) / len(a.split())
+    return float(max(coverage, fuzz.token_set_ratio(a, b)))
 
 
 def rank(spoken: str, options: Iterable[tuple[str, str]], limit: int = 3) -> list[Candidate]:
@@ -72,7 +82,7 @@ def rank(spoken: str, options: Iterable[tuple[str, str]], limit: int = 3) -> lis
     return scored[:limit]
 
 
-def resolve(spoken: str, options: Sequence[tuple[str, str]]) -> tuple[Optional[Candidate], list[Candidate]]:
+def resolve(spoken: str, options: Sequence[tuple[str, str]]) -> tuple[Candidate | None, list[Candidate]]:
     """Exact id match wins. Otherwise return (accepted candidate or None, ranked candidates)."""
     for oid, name in options:
         if spoken == oid:

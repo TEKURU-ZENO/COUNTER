@@ -6,7 +6,7 @@ the worker, the agent and scripts receive collaborators from it instead of const
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -45,7 +45,7 @@ class Container:
     payments: PaymentService
     sms: SmsSender
     http: httpx.AsyncClient
-    llm: Optional[Any] = None
+    llm: Any | None = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     async def aclose(self) -> None:

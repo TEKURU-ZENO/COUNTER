@@ -19,7 +19,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -58,9 +58,9 @@ class LLMUnavailableError(RuntimeError):
 
 @dataclass
 class TurnMetrics:
-    model: Optional[str] = None
+    model: str | None = None
     llm_ms: int = 0
-    ttft_ms: Optional[int] = None
+    ttft_ms: int | None = None
     input_tokens: int = 0
     output_tokens: int = 0
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
@@ -72,16 +72,16 @@ class TurnMetrics:
 @dataclass
 class TurnResult:
     speech: str
-    order: Optional[dict[str, Any]]
+    order: dict[str, Any] | None
     ended: bool
-    handoff_reason: Optional[str]
-    awaiting: Optional[str]
+    handoff_reason: str | None
+    awaiting: str | None
     metrics: TurnMetrics
     latency_ms: int
 
 
 class CallSession:
-    def __init__(self, container: Container, call_id: str, state: CallState, llm: Optional[LLMClient] = None):
+    def __init__(self, container: Container, call_id: str, state: CallState, llm: LLMClient | None = None):
         self.c = container
         self.call_id = call_id
         self.state = state
@@ -96,9 +96,9 @@ class CallSession:
         *,
         caller_phone: str,
         channel: str,
-        shop_id: Optional[str] = None,
-        llm: Optional[LLMClient] = None,
-    ) -> tuple["CallSession", str]:
+        shop_id: str | None = None,
+        llm: LLMClient | None = None,
+    ) -> tuple[CallSession, str]:
         shop_id = shop_id or container.settings.default_shop_id
         key = container.settings.caller_hash_key.get_secret_value()
         chash = identity.caller_hash(caller_phone, key)
@@ -118,7 +118,7 @@ class CallSession:
         return cls(container, call_id, state, llm), greeting
 
     @classmethod
-    async def resume(cls, container: Container, call_id: str, llm: Optional[LLMClient] = None) -> Optional["CallSession"]:
+    async def resume(cls, container: Container, call_id: str, llm: LLMClient | None = None) -> CallSession | None:
         async with container.session_maker() as session:
             call = await session.get(CallModel, call_id)
             if call is None:
@@ -134,9 +134,9 @@ class CallSession:
                 call.ended_at = call.ended_at or utc_now()
                 call.outcome = "handoff" if self.state.handoff_reason else (call.outcome or "ended")
 
-    async def _record_turn(self, speaker: str, text: str, metrics: Optional[TurnMetrics] = None, *,
-                           latency_ms: Optional[int] = None, stt_ms: Optional[int] = None,
-                           tts_ms: Optional[int] = None) -> None:
+    async def _record_turn(self, speaker: str, text: str, metrics: TurnMetrics | None = None, *,
+                           latency_ms: int | None = None, stt_ms: int | None = None,
+                           tts_ms: int | None = None) -> None:
         self.state.turn_seq += 1
         row = CallTurnModel(call_id=self.call_id, seq=self.state.turn_seq, speaker=speaker, text=text,
                             latency_ms=latency_ms, stt_ms=stt_ms, tts_ms=tts_ms)
@@ -159,9 +159,9 @@ class CallSession:
         text: str,
         *,
         interrupted: bool = False,
-        stt_ms: Optional[int] = None,
-        tts_ms: Optional[int] = None,
-        caller_phone: Optional[str] = None,
+        stt_ms: int | None = None,
+        tts_ms: int | None = None,
+        caller_phone: str | None = None,
     ) -> TurnResult:
         t0 = time.perf_counter()
         metrics = TurnMetrics()
@@ -235,7 +235,7 @@ class CallSession:
             cut += 1
         self.state.messages = msgs[cut:]
 
-    async def _order_snapshot(self) -> Optional[dict[str, Any]]:
+    async def _order_snapshot(self) -> dict[str, Any] | None:
         if not self.state.order_id:
             return None
         async with self.c.session_maker() as session:
@@ -306,7 +306,7 @@ class CallSession:
             state=json.dumps(self.state.public_view()),
         )
 
-    async def _llm_turn(self, metrics: TurnMetrics, caller_phone: Optional[str]) -> str:
+    async def _llm_turn(self, metrics: TurnMetrics, caller_phone: str | None) -> str:
         if self.llm is None:
             raise LLMUnavailableError(LLM_UNAVAILABLE)
         tools = AgentTools(self.c, self.call_id, self.state, caller_phone=caller_phone)
@@ -337,7 +337,7 @@ class CallSession:
             if not calls:
                 return result.text or "Sorry, could you say that again?"
 
-            verbatim: Optional[str] = None
+            verbatim: str | None = None
             for call in calls:
                 entry: dict[str, Any] = {"name": call.name}
                 spec = TOOL_MODELS.get(call.name)

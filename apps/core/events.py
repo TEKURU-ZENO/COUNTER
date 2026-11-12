@@ -16,7 +16,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger("counter.events")
 CHANNEL = "counter:events"
@@ -25,9 +25,9 @@ CHANNEL = "counter:events"
 class EventBus(Protocol):
     async def publish(self, event: dict[str, Any]) -> None: ...
 
-    def subscribe(self) -> "asyncio.Queue[dict[str, Any]]": ...
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]: ...
 
-    def unsubscribe(self, queue: "asyncio.Queue[dict[str, Any]]") -> None: ...
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None: ...
 
     async def start(self) -> None: ...
 
@@ -38,12 +38,12 @@ class _LocalFanout:
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
 
-    def subscribe(self) -> "asyncio.Queue[dict[str, Any]]":
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=1000)
         self._subscribers.add(queue)
         return queue
 
-    def unsubscribe(self, queue: "asyncio.Queue[dict[str, Any]]") -> None:
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
         self._subscribers.discard(queue)
 
     def deliver(self, event: dict[str, Any]) -> None:
@@ -76,7 +76,7 @@ class RedisEventBus(_LocalFanout):
         import redis.asyncio as redis_asyncio
 
         self._redis = redis_asyncio.from_url(redis_url, decode_responses=True)
-        self._task: Optional[asyncio.Task[None]] = None
+        self._task: asyncio.Task[None] | None = None
 
     async def publish(self, event: dict[str, Any]) -> None:
         await self._redis.publish(CHANNEL, json.dumps(event, default=str))

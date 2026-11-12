@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from packages.domain.money import MoneyError, value_to_cents
 
@@ -24,7 +23,7 @@ class CaptureOutcome(str, Enum):
 @dataclass(frozen=True)
 class ReconcileResult:
     outcome: CaptureOutcome
-    captured_cents: Optional[int]
+    captured_cents: int | None
     reasons: tuple[str, ...] = ()
 
 
@@ -39,7 +38,7 @@ def reconcile_capture(
     status: str,
     amount_value: str,
     currency: str,
-    custom_id: Optional[str],
+    custom_id: str | None,
 ) -> ReconcileResult:
     reasons: list[str] = []
     try:

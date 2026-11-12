@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Protocol
 
 import httpx
 
@@ -36,7 +37,7 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
-    raw_arguments: Optional[str] = None  # set when the model emitted unparseable JSON
+    raw_arguments: str | None = None  # set when the model emitted unparseable JSON
 
 
 @dataclass
@@ -47,8 +48,8 @@ class LLMResult:
     input_tokens: int
     output_tokens: int
     latency_ms: int
-    ttft_ms: Optional[int]
-    stop_reason: Optional[str] = None
+    ttft_ms: int | None
+    stop_reason: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -64,7 +65,7 @@ class LLMClient(Protocol):
         tools: Sequence[ToolSpec],
         max_tokens: int = 400,
         temperature: float = 0.2,
-        tool_choice: Optional[str] = None,
+        tool_choice: str | None = None,
     ) -> LLMResult: ...
 
 
@@ -115,7 +116,7 @@ class AnthropicLLM:
         tools: Sequence[ToolSpec],
         max_tokens: int = 400,
         temperature: float = 0.2,
-        tool_choice: Optional[str] = None,
+        tool_choice: str | None = None,
     ) -> LLMResult:
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -131,7 +132,7 @@ class AnthropicLLM:
             elif tool_choice:
                 kwargs["tool_choice"] = {"type": "tool", "name": tool_choice}
         t0 = time.perf_counter()
-        ttft: Optional[int] = None
+        ttft: int | None = None
         async with self._client.messages.stream(**kwargs) as stream:
             async for event in stream:
                 if ttft is None and getattr(event, "type", "") in ("content_block_start", "content_block_delta", "text"):
@@ -197,7 +198,7 @@ class OpenAICompatibleLLM:
         tools: Sequence[ToolSpec],
         max_tokens: int = 400,
         temperature: float = 0.2,
-        tool_choice: Optional[str] = None,
+        tool_choice: str | None = None,
     ) -> LLMResult:
         body: dict[str, Any] = {
             "model": self.model,
@@ -217,12 +218,12 @@ class OpenAICompatibleLLM:
             elif tool_choice:
                 body["tool_choice"] = {"type": "function", "function": {"name": tool_choice}}
         t0 = time.perf_counter()
-        ttft: Optional[int] = None
+        ttft: int | None = None
         text: list[str] = []
         calls: dict[int, dict[str, Any]] = {}
         usage: dict[str, Any] = {}
         model = self.model
-        finish: Optional[str] = None
+        finish: str | None = None
         async with self._http.stream(
             "POST", self._url, json=body, headers={"Authorization": f"Bearer {self._key}"}, timeout=60.0
         ) as resp:
@@ -268,7 +269,7 @@ class OpenAICompatibleLLM:
         )
 
 
-def build_llm(settings: Settings, http: httpx.AsyncClient, model: Optional[str] = None) -> Optional[LLMClient]:
+def build_llm(settings: Settings, http: httpx.AsyncClient, model: str | None = None) -> LLMClient | None:
     """Returns None when no provider is configured. Nothing falls back to keyword matching."""
     chosen = model or settings.llm_model
     if settings.llm_provider is None or not chosen:
@@ -308,5 +309,5 @@ def say(text: str) -> LLMResult:
     return LLMResult(text, [], "scripted", 0, 0, 0, 0)
 
 
-def call(name: str, args: dict[str, Any], call_id: Optional[str] = None, text: str = "") -> LLMResult:
+def call(name: str, args: dict[str, Any], call_id: str | None = None, text: str = "") -> LLMResult:
     return LLMResult(text, [ToolCall(call_id or f"call_{name}_{id(args)}", name, args)], "scripted", 0, 0, 0, 0)

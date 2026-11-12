@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -90,7 +90,7 @@ def _order_row(o: OrderModel) -> dict[str, Any]:
 
 
 @router.get("/orders")
-async def list_orders(state: Optional[str] = None, limit: int = 200, _: str = Depends(require_merchant),
+async def list_orders(state: str | None = None, limit: int = 200, _: str = Depends(require_merchant),
                       c: Container = Depends(get_container)) -> list[dict[str, Any]]:
     stmt = select(OrderModel).where(OrderModel.shop_id == c.settings.default_shop_id)
     if state:
@@ -208,7 +208,7 @@ async def call_turns(call_id: str, _: str = Depends(require_merchant), c: Contai
 
 
 @router.get("/stream")
-async def merchant_stream(last_event_id: Optional[str] = Header(None), _: str = Depends(require_merchant),
+async def merchant_stream(last_event_id: str | None = Header(None), _: str = Depends(require_merchant),
                           c: Container = Depends(get_container)) -> StreamingResponse:
     return StreamingResponse(event_stream(c, last_event_id=last_event_id, accept=lambda e: True),
                              media_type="text/event-stream",
@@ -230,7 +230,7 @@ async def copilot(req: CopilotRequest, _: str = Depends(require_merchant), c: Co
     try:
         return await answer(c, req.question)
     except CopilotUnavailable as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
 
 
 # ---------------------------------------------------------------------- menu onboarding
@@ -250,7 +250,7 @@ async def menu_extract(file: UploadFile = File(...), _: str = Depends(require_me
     try:
         return await extract_menu(c, data, media_type)
     except ExtractionUnavailable as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
 
 
 class PublishItem(BaseModel):

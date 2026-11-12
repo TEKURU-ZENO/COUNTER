@@ -7,8 +7,7 @@ All timestamps are naive UTC (utc_now()). Money is integer cents with an explici
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -27,7 +26,7 @@ from packages.domain.models import ActorType, OrderState
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def generate_uuid() -> str:
@@ -63,7 +62,7 @@ class MenuItemModel(Base):
     prep_min: Mapped[int] = mapped_column(Integer, default=15)
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     dietary_tags_json: Mapped[str] = mapped_column(Text, default="[]")
-    paypal_product_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    paypal_product_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class ModifierModel(Base):
@@ -89,8 +88,8 @@ class MenuDraftModel(Base):
     items_json: Mapped[str] = mapped_column(Text, default="[]")
     model: Mapped[str] = mapped_column(String(128), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    published_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    published_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PickupSlotModel(Base):
@@ -108,7 +107,7 @@ class OrderModel(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=generate_uuid)
     shop_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    call_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    call_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     caller_hash: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     state: Mapped[str] = mapped_column(String(32), default=OrderState.DRAFT.value, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -116,18 +115,18 @@ class OrderModel(Base):
     subtotal_cents: Mapped[int] = mapped_column(Integer, default=0)
     tax_cents: Mapped[int] = mapped_column(Integer, default=0)
     total_cents: Mapped[int] = mapped_column(Integer, default=0)
-    quote_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    pickup_slot_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    pickup_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    paypal_order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
-    approval_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    link_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    quote_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pickup_slot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pickup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paypal_order_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    approval_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    link_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     vault_opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
-    review_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
-    lines: Mapped[list["OrderLineModel"]] = relationship(
+    lines: Mapped[list[OrderLineModel]] = relationship(
         "OrderLineModel", back_populates="order", lazy="selectin", cascade="all, delete-orphan"
     )
 
@@ -157,7 +156,7 @@ class OrderEventModel(Base):
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     actor: Mapped[str] = mapped_column(String(32), default=ActorType.SYSTEM.value)
-    actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    actor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
@@ -175,9 +174,9 @@ class OutboxModel(Base):
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(16), default="PENDING")  # PENDING, PUBLISHED, DEAD
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PaymentModel(Base):
@@ -190,9 +189,9 @@ class PaymentModel(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    fee_cents: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fee_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="link")  # link, vault
-    mandate_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    mandate_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
@@ -203,13 +202,13 @@ class RefundModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=generate_uuid)
     order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     capture_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    paypal_refund_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, unique=True)
+    paypal_refund_id: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     reason: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False)  # COMPLETED, PENDING, FAILED
     source: Mapped[str] = mapped_column(String(32), default="agent")  # agent, owner, paypal
-    approved_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
@@ -221,12 +220,12 @@ class WebhookEventModel(Base):
     paypal_event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
-    paypal_create_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    paypal_create_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     status: Mapped[str] = mapped_column(String(16), default="RECEIVED", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class VaultMandateModel(Base):
@@ -239,9 +238,9 @@ class VaultMandateModel(Base):
     max_charge_cents: Mapped[int] = mapped_column(Integer, default=5000)
     status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
     revoke_token: Mapped[str] = mapped_column(String(128), default=generate_uuid, index=True)
-    source_order_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    source_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ConsentEventModel(Base):
@@ -271,7 +270,7 @@ class StepUpChallengeModel(Base):
     code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
-    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
@@ -296,8 +295,8 @@ class CallModel(Base):
     channel: Mapped[str] = mapped_column(String(16), default="web")  # web, phone, eval
     state_json: Mapped[str] = mapped_column(Text, default="{}")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    outcome: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class CallTurnModel(Base):
@@ -310,15 +309,15 @@ class CallTurnModel(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     # Measured timings (null when not measured; never filled with estimates)
-    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # server time for the turn
-    llm_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    llm_ttft_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    stt_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # reported by the speech client
-    tts_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # reported by the speech client
-    model: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    prompt_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # server time for the turn
+    llm_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_ttft_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stt_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # reported by the speech client
+    tts_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)  # reported by the speech client
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tool_calls_json: Mapped[str] = mapped_column(Text, default="[]")
     validation_errors: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -348,5 +347,5 @@ class ApprovalModel(Base):
     reason: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(32), default="PENDING")  # PENDING, APPROVED, REJECTED
     requested_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    decided_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

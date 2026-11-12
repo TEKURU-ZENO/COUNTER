@@ -6,7 +6,8 @@ PAYPAL_MODE=mock. Sandbox tests live in tests/sandbox and are opt-in (pytest -m 
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 import pytest
@@ -82,7 +83,7 @@ async def start_call(container: Container, script: list[Any], phone: str = "+1 4
     return session, llm
 
 
-def last_tool_result(llm: ScriptedLLM, name: Optional[str] = None) -> dict[str, Any]:
+def last_tool_result(llm: ScriptedLLM, name: str | None = None) -> dict[str, Any]:
     import json
 
     for msg in reversed(llm.requests[-1]["messages"]):

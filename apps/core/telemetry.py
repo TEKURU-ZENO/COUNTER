@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Optional
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -45,7 +44,7 @@ def setup_tracing(service_name: str, environment: str) -> None:
 tracer = trace.get_tracer("counter")
 
 
-def record_client_span(name: str, duration_ms: Optional[int], **attrs: object) -> None:
+def record_client_span(name: str, duration_ms: int | None, **attrs: object) -> None:
     """Record a span whose duration was measured by the client (end = now)."""
     if duration_ms is None or duration_ms < 0:
         return

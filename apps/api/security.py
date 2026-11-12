@@ -16,7 +16,6 @@ import hmac
 import secrets
 import time
 from collections import defaultdict
-from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -80,7 +79,7 @@ def issue_call_token(settings: Settings, call_id: str) -> str:
     return _serializer(settings, "web-call").dumps(call_id)
 
 
-def check_call_token(settings: Settings, call_id: str, token: Optional[str]) -> bool:
+def check_call_token(settings: Settings, call_id: str, token: str | None) -> bool:
     if not token:
         return False
     try:
@@ -99,7 +98,7 @@ async def require_merchant(request: Request, c: Container = Depends(get_containe
     try:
         data = _serializer(c.settings, "merchant-session").loads(token, max_age=SESSION_MAX_AGE)
     except (BadSignature, SignatureExpired):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired") from None
     if data.get("sub") != c.settings.owner_email:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown user")
     return str(data["sub"])
@@ -118,7 +117,7 @@ async def require_service(request: Request, c: Container = Depends(get_container
 class RateLimiter:
     """Fixed-window counter per (bucket, client). Redis keeps it consistent across processes."""
 
-    def __init__(self, redis_url: Optional[str]):
+    def __init__(self, redis_url: str | None):
         self._local: dict[tuple[str, str, int], int] = defaultdict(int)
         self._redis = None
         if redis_url:
@@ -141,7 +140,7 @@ class RateLimiter:
         return self._local[k] <= limit
 
 
-def rate_limit(bucket: str, per_minute: Optional[int] = None):  # type: ignore[no-untyped-def]
+def rate_limit(bucket: str, per_minute: int | None = None):  # type: ignore[no-untyped-def]
     async def _dep(request: Request, c: Container = Depends(get_container)) -> None:
         limiter: RateLimiter = request.app.state.rate_limiter
         client = request.client.host if request.client else "unknown"

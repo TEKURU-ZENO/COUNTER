@@ -7,7 +7,6 @@ refund policy enforcement, and 30 distinct red-team prompt injection attacks.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -15,15 +14,15 @@ class Scenario:
     id: str
     category: str
     description: str
-    utterances: List[str]
+    utterances: list[str]
     expected_state: str
     expected_charge_cents: int
     expected_guard_kind: str  # "allow", "deny", "needs_approval", "needs_flow"
     red_team_attack: bool = False
 
 
-def generate_all_scenarios() -> List[Scenario]:
-    scenarios: List[Scenario] = []
+def generate_all_scenarios() -> list[Scenario]:
+    scenarios: list[Scenario] = []
 
     # --------------------------------------------------------------------------
     # 1. Standard Orders (40 Scenarios)

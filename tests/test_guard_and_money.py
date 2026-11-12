@@ -17,6 +17,7 @@ from packages.domain.models import (
     GuardDecisionKind,
     MenuItem,
     ModifierSelection,
+    OrderAction,
     OrderState,
     ShopPolicy,
     StepUpRecord,
@@ -287,3 +288,35 @@ def test_purchase_unit_rejects_mismatch_and_bad_currency():
     for currency in ("JPY", "usd", "US"):
         with pytest.raises(MoneyError):
             build_purchase_unit(reference_id="o", currency=currency, lines=[], subtotal_cents=1, tax_cents=0, total_cents=1)
+
+
+def test_send_link_denials_and_generic_transition():
+    q = _quote()
+    g = Guard()
+    base = {"current_state": OrderState.QUOTED, "provided_quote_hash": q.quote_hash, "current_quote": q,
+            "slot_available": True, "shop_open": True}
+    assert g.evaluate_send_payment_link(**base).allowed
+    assert "closed" in g.evaluate_send_payment_link(**{**base, "shop_open": False}).reason
+    assert "capacity" in g.evaluate_send_payment_link(**{**base, "slot_available": False}).reason
+    assert "state" in g.evaluate_send_payment_link(**{**base, "current_state": OrderState.DRAFT}).reason
+    assert "fingerprint" in g.evaluate_send_payment_link(**{**base, "provided_quote_hash": "x"}).reason
+    empty = calculate_quote("shop_1", [], MENU)
+    assert "empty" in g.evaluate_quote(empty).reason
+    assert g.evaluate_transition(OrderState.CAPTURED, OrderAction.KITCHEN_ACCEPT).target_state == OrderState.IN_KITCHEN
+    assert not g.evaluate_transition(OrderState.DRAFT, OrderAction.PICKUP).allowed
+
+
+def test_owner_refund_rejects_non_refundable_state_and_zero():
+    g = Guard()
+    assert not g.evaluate_owner_refund(current_state=OrderState.LINK_SENT, requested_cents=100,
+                                       captured_amount_cents=1000, already_refunded_cents=0).allowed
+    assert not g.evaluate_owner_refund(current_state=OrderState.CAPTURED, requested_cents=0,
+                                       captured_amount_cents=1000, already_refunded_cents=0).allowed
+
+
+def test_vault_charge_rejects_quote_policy_violation():
+    big_menu = {"pizza": MenuItem(id="pizza", shop_id="shop_1", name="Feast", category="Pizza", price_cents=60000)}
+    q = calculate_quote("shop_1", [CartItem("pizza", "Feast", 1)], big_menu)
+    mandate = VaultMandate(id="m1", vault_id="v1", customer_hash="h", shop_id="shop_1", max_charge_cents=10**7)
+    d = Guard().evaluate_charge_saved_payment(**_charge_kwargs(q, mandate=mandate))
+    assert not d.allowed and "maximum order value" in d.reason

@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 from packages.domain.models import (
     CartItem,
     MenuItem,
-    ModifierSelection,
     Quote,
     QuoteLine,
 )
@@ -60,7 +59,7 @@ def compute_quote_hash(
     """
     canonical_lines = []
     # Sort lines deterministically by item_id and modifiers
-    for line in sorted(lines, key=lambda l: (l.item_id, l.name)):
+    for line in sorted(lines, key=lambda ql: (ql.item_id, ql.name)):
         sorted_mods = sorted(
             [(m.modifier_id, m.name, m.price_delta_cents) for m in line.modifiers]
         )

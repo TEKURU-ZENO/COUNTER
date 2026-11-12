@@ -5,8 +5,8 @@ from __future__ import annotations
 import html
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -44,7 +44,7 @@ async def healthz(c: Container = Depends(get_container)) -> dict[str, Any]:
 
 
 @router.get("/api/v1/menu", dependencies=[Depends(rate_limit("menu", 120))])
-async def get_menu(shop_id: Optional[str] = None, c: Container = Depends(get_container)) -> list[dict[str, Any]]:
+async def get_menu(shop_id: str | None = None, c: Container = Depends(get_container)) -> list[dict[str, Any]]:
     shop_id = shop_id or c.settings.default_shop_id
     async with c.session_maker() as session:
         items = (await session.execute(select(MenuItemModel).where(MenuItemModel.shop_id == shop_id))).scalars().all()
@@ -65,16 +65,16 @@ async def get_menu(shop_id: Optional[str] = None, c: Container = Depends(get_con
 class StartCallRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     caller_phone: str = Field(min_length=7, max_length=20)
-    shop_id: Optional[str] = None
+    shop_id: str | None = None
 
 
 class TurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(max_length=1000)
     interrupted: bool = False
-    stt_ms: Optional[int] = Field(default=None, ge=0, le=60_000)
-    tts_ms: Optional[int] = Field(default=None, ge=0, le=60_000)
-    caller_phone: Optional[str] = Field(default=None, max_length=20)
+    stt_ms: int | None = Field(default=None, ge=0, le=60_000)
+    tts_ms: int | None = Field(default=None, ge=0, le=60_000)
+    caller_phone: str | None = Field(default=None, max_length=20)
 
 
 def _turn_payload(c: Container, call_id: str, result: TurnResult) -> dict[str, Any]:
@@ -101,13 +101,13 @@ async def start_call(req: StartCallRequest, c: Container = Depends(get_container
     try:
         session, greeting = await CallSession.start(c, caller_phone=req.caller_phone, channel="web", shop_id=req.shop_id)
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
     return {"call_id": session.call_id, "call_token": issue_call_token(c.settings, session.call_id),
             "speech": greeting, "demo_sms_inbox": isinstance(c.sms, DemoInboxSms),
             "returning_customer": session.state.has_saved_paypal}
 
 
-async def _web_session(c: Container, call_id: str, token: Optional[str]) -> CallSession:
+async def _web_session(c: Container, call_id: str, token: str | None) -> CallSession:
     if not check_call_token(c.settings, call_id, token):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid call token")
     session = await CallSession.resume(c, call_id)
@@ -117,26 +117,26 @@ async def _web_session(c: Container, call_id: str, token: Optional[str]) -> Call
 
 
 @router.post("/api/v1/calls/{call_id}/turns", dependencies=[Depends(rate_limit("call-turn", 60))])
-async def call_turn(call_id: str, req: TurnRequest, x_call_token: Optional[str] = Header(None),
+async def call_turn(call_id: str, req: TurnRequest, x_call_token: str | None = Header(None),
                     c: Container = Depends(get_container)) -> dict[str, Any]:
     session = await _web_session(c, call_id, x_call_token)
     try:
         result = await session.handle_turn(req.text, interrupted=req.interrupted, stt_ms=req.stt_ms,
                                            tts_ms=req.tts_ms, caller_phone=req.caller_phone)
     except LLMUnavailableError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
     return _turn_payload(c, call_id, result)
 
 
 @router.post("/api/v1/calls/{call_id}/silence", dependencies=[Depends(rate_limit("call-turn", 60))])
-async def call_silence(call_id: str, x_call_token: Optional[str] = Header(None),
+async def call_silence(call_id: str, x_call_token: str | None = Header(None),
                        c: Container = Depends(get_container)) -> dict[str, Any]:
     session = await _web_session(c, call_id, x_call_token)
     return _turn_payload(c, call_id, await session.handle_silence())
 
 
 @router.get("/api/v1/calls/{call_id}/demo-sms")
-async def demo_sms(call_id: str, x_call_token: Optional[str] = Header(None),
+async def demo_sms(call_id: str, x_call_token: str | None = Header(None),
                    c: Container = Depends(get_container)) -> dict[str, Any]:
     if not isinstance(c.sms, DemoInboxSms):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Demo SMS inbox is disabled")
@@ -162,7 +162,7 @@ async def agent_turn(call_id: str, req: TurnRequest, c: Container = Depends(get_
         result = await session.handle_turn(req.text, interrupted=req.interrupted, stt_ms=req.stt_ms,
                                            tts_ms=req.tts_ms, caller_phone=req.caller_phone)
     except LLMUnavailableError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from None
     return _turn_payload(c, call_id, result)
 
 
@@ -265,7 +265,7 @@ async def order_status(order_id: str, t: str = Query(...), c: Container = Depend
 
 
 @router.get("/api/v1/orders/{order_id}/stream")
-async def order_stream(order_id: str, t: str = Query(...), last_event_id: Optional[str] = Header(None),
+async def order_stream(order_id: str, t: str = Query(...), last_event_id: str | None = Header(None),
                        c: Container = Depends(get_container)) -> StreamingResponse:
     if not check_order_token(c.settings, order_id, t):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This link is invalid or has expired")
@@ -279,11 +279,11 @@ async def order_stream(order_id: str, t: str = Query(...), last_event_id: Option
 # ---------------------------------------------------------------------- PayPal webhooks
 
 
-def _parse_paypal_time(raw: Any) -> Optional[datetime]:
+def _parse_paypal_time(raw: Any) -> datetime | None:
     if not isinstance(raw, str):
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(UTC).replace(tzinfo=None)
     except ValueError:
         return None
 
@@ -298,7 +298,7 @@ async def paypal_webhook(request: Request, c: Container = Depends(get_container)
     try:
         event = json.loads(raw)
     except ValueError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON") from None
     event_id, event_type = event.get("id"), event.get("event_type")
     if not isinstance(event_id, str) or not event_id or not isinstance(event_type, str):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Event id and type are required")

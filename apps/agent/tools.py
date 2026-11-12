@@ -14,7 +14,7 @@ import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -132,19 +132,19 @@ class CallState:
     caller_hash: str
     channel: str = "web"
     messages: list[dict[str, Any]] = field(default_factory=list)
-    order_id: Optional[str] = None
-    quote_hash: Optional[str] = None
-    total_cents: Optional[int] = None
-    readback: Optional[str] = None
+    order_id: str | None = None
+    quote_hash: str | None = None
+    total_cents: int | None = None
+    readback: str | None = None
     has_saved_paypal: bool = False
-    pending: Optional[str] = None  # None | "otp" | "consent"
-    consent_prompt: Optional[str] = None
+    pending: str | None = None  # None | "otp" | "consent"
+    consent_prompt: str | None = None
     consent_attempts: int = 0
     low_confidence_streak: int = 0
     silence_count: int = 0
     ended: bool = False
-    handoff_reason: Optional[str] = None
-    approval_url: Optional[str] = None
+    handoff_reason: str | None = None
+    approval_url: str | None = None
     turn_seq: int = 0
     tool_seq: int = 0
 
@@ -152,7 +152,7 @@ class CallState:
         return json.dumps(asdict(self))
 
     @classmethod
-    def from_json(cls, raw: str) -> "CallState":
+    def from_json(cls, raw: str) -> CallState:
         return cls(**json.loads(raw))
 
     def public_view(self) -> dict[str, Any]:
@@ -172,14 +172,14 @@ class ToolOutcome:
     ok: bool
     data: dict[str, Any]
     low_confidence: bool = False
-    speak_verbatim: Optional[str] = None
+    speak_verbatim: str | None = None
 
 
 # ---------------------------------------------------------------------- tool implementations
 
 
 class AgentTools:
-    def __init__(self, container: Container, call_id: str, state: CallState, caller_phone: Optional[str] = None):
+    def __init__(self, container: Container, call_id: str, state: CallState, caller_phone: str | None = None):
         self.c = container
         self.call_id = call_id
         self.state = state
@@ -427,7 +427,7 @@ def _agent():  # small indirection to avoid importing ActorType at module top in
     return ActorType.AGENT
 
 
-async def load_call(container: Container, call_id: str) -> Optional[tuple[CallModel, CallState]]:
+async def load_call(container: Container, call_id: str) -> tuple[CallModel, CallState] | None:
     async with container.session_maker() as session:
         call = await session.get(CallModel, call_id)
         if call is None:

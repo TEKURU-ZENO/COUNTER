@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class OrderState(str, Enum):
@@ -115,7 +115,7 @@ class MenuItem:
     prep_min: int = 15
     available: bool = True
     dietary_tags: tuple[str, ...] = field(default_factory=tuple)
-    paypal_product_id: Optional[str] = None
+    paypal_product_id: str | None = None
     modifiers: tuple[ModifierDefinition, ...] = field(default_factory=tuple)
 
 
@@ -192,6 +192,6 @@ class GuardDecision:
     kind: GuardDecisionKind
     reason: str
     allowed: bool
-    computed_amount_cents: Optional[int] = None
-    target_state: Optional[OrderState] = None
+    computed_amount_cents: int | None = None
+    target_state: OrderState | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

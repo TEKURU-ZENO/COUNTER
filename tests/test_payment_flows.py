@@ -216,9 +216,9 @@ async def test_owner_partial_refunds_are_bounded_by_captured_amount(container: C
                           json={"amount_cents": 1070, "client_request_id": "req-aaaaaaa3"})
     assert r.status_code == 200 and r.json()["state"] == "REFUNDED_FULL"
 
-    from apps.api.copilot import DateRange, _ledger_summary
-
     from datetime import date, timedelta
+
+    from apps.api.copilot import DateRange, _ledger_summary
 
     today = date.today()
     window = DateRange(start_date=(today - timedelta(days=1)).isoformat(), end_date=(today + timedelta(days=1)).isoformat())

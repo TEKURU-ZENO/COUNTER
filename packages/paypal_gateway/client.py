@@ -15,7 +15,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -45,8 +46,8 @@ class PayPalClient:
         client_secret: str,
         webhook_id: str,
         mode: str,
-        partner_attribution_id: Optional[str] = None,
-        http: Optional[httpx.AsyncClient] = None,
+        partner_attribution_id: str | None = None,
+        http: httpx.AsyncClient | None = None,
     ):
         if mode not in ("sandbox", "live"):
             raise ValueError("PayPalClient only talks to sandbox or live; use MockPayPalGateway for mock")
@@ -57,7 +58,7 @@ class PayPalClient:
         self.partner_attribution_id = partner_attribution_id
         self.base_url = LIVE_BASE if mode == "live" else SANDBOX_BASE
         self._http = http or httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0))
-        self._token: Optional[str] = None
+        self._token: str | None = None
         self._token_expires_at = 0.0
         self._token_lock = asyncio.Lock()
 
@@ -92,9 +93,9 @@ class PayPalClient:
         method: str,
         path: str,
         *,
-        json_body: Optional[dict[str, Any]] = None,
-        raw_body: Optional[bytes] = None,
-        request_id: Optional[str] = None,
+        json_body: dict[str, Any] | None = None,
+        raw_body: bytes | None = None,
+        request_id: str | None = None,
         prefer_representation: bool = True,
     ) -> dict[str, Any]:
         @retry(
@@ -320,7 +321,7 @@ class PayPalClient:
             f'"webhook_id":{json.dumps(self.webhook_id)},'
             f'"webhook_event":{raw_body.decode("utf-8")}'
             "}"
-        ).encode("utf-8")
+        ).encode()
         try:
             res = await self._request(
                 "POST",

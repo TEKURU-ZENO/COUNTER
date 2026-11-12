@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,7 @@ from apps.core.settings import Settings, get_settings
 from apps.core.telemetry import setup_tracing
 
 
-def create_app(settings: Optional[Settings] = None, container: Optional[Container] = None) -> FastAPI:
+def create_app(settings: Settings | None = None, container: Container | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level)
 
@@ -31,7 +31,7 @@ def create_app(settings: Optional[Settings] = None, container: Optional[Containe
         app.state.container = c
         app.state.rate_limiter = RateLimiter(settings.redis_url)
         await ensure_demo_shop(c)
-        worker_task: Optional[asyncio.Task[None]] = None
+        worker_task: asyncio.Task[None] | None = None
         worker = None
         if settings.run_worker_in_process:
             from apps.worker.worker import CounterWorker

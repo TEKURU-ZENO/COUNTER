@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Protocol
 
 from packages.domain.money import PayPalLine
 
@@ -14,15 +15,15 @@ class PayPalError(Exception):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        details: Optional[dict[str, Any]] = None,
+        status_code: int | None = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.details = details or {}
 
     @property
-    def issue(self) -> Optional[str]:
+    def issue(self) -> str | None:
         """First issue code from PayPal's error body, e.g. ORDER_ALREADY_CAPTURED."""
         for detail in self.details.get("details", []) or []:
             if isinstance(detail, dict) and detail.get("issue"):
@@ -51,7 +52,7 @@ class WebhookHeaders:
     )
 
     @classmethod
-    def from_mapping(cls, headers: Any) -> Optional["WebhookHeaders"]:
+    def from_mapping(cls, headers: Any) -> WebhookHeaders | None:
         """Return None if any transmission header is missing. Never substitutes defaults."""
         values = []
         for name in cls.REQUIRED:
@@ -70,13 +71,13 @@ class CaptureFacts:
     status: str
     amount_value: str
     currency: str
-    custom_id: Optional[str]
-    status_reason: Optional[str] = None
-    vault_id: Optional[str] = None
-    fee_value: Optional[str] = None
+    custom_id: str | None
+    status_reason: str | None = None
+    vault_id: str | None = None
+    fee_value: str | None = None
 
 
-def extract_capture(order_response: dict[str, Any]) -> Optional[CaptureFacts]:
+def extract_capture(order_response: dict[str, Any]) -> CaptureFacts | None:
     """Pull the first capture out of an Orders v2 capture/create response."""
     try:
         unit = order_response["purchase_units"][0]
@@ -104,7 +105,7 @@ def extract_capture(order_response: dict[str, Any]) -> Optional[CaptureFacts]:
     )
 
 
-def approval_link(order_response: dict[str, Any]) -> Optional[str]:
+def approval_link(order_response: dict[str, Any]) -> str | None:
     """With payment_source set, PayPal returns rel=payer-action; older flows return rel=approve."""
     for link in order_response.get("links", []) or []:
         if link.get("rel") in ("payer-action", "approve"):

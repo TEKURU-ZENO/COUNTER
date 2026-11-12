@@ -7,15 +7,14 @@ quote hash tamper tests, and mutation verification tests.
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, strategies as st
 
 from packages.domain.fsm import (
-    refund_action,
-    IllegalStateTransitionError,
     TRANSITION_TABLE,
+    IllegalStateTransitionError,
     can_transition,
     get_next_state,
     get_side_effects,
+    refund_action,
 )
 from packages.domain.guard import Guard
 from packages.domain.models import (
@@ -27,9 +26,7 @@ from packages.domain.models import (
     ModifierSelection,
     OrderAction,
     OrderState,
-    Quote,
     ShopPolicy,
-    VaultMandate,
 )
 from packages.domain.pricing import (
     MenuItemNotFoundError,
@@ -39,7 +36,6 @@ from packages.domain.pricing import (
     format_cents,
     generate_spoken_readback,
 )
-
 
 # ==============================================================================
 # Fixtures & Sample Data

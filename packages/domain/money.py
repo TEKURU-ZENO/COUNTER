@@ -9,8 +9,9 @@ purchase-unit builder checks those identities before anything leaves the process
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 # Currencies PayPal treats as zero-decimal. We only support two-decimal currencies; failing
 # loudly is better than sending 1450 JPY as "14.50".

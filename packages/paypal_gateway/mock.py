@@ -18,7 +18,8 @@ import hashlib
 import hmac
 import itertools
 import json
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from packages.domain.money import PayPalLine, build_purchase_unit, cents_to_value, value_to_cents
 from packages.paypal_gateway.types import PayPalError, WebhookHeaders
@@ -41,7 +42,7 @@ def mock_signature(secret: str, headers_without_sig: dict[str, str], raw_body: b
     return base64.b64encode(hmac.new(secret.encode(), message, hashlib.sha256).digest()).decode()
 
 
-def sign_mock_webhook(secret: str, raw_body: bytes, transmission_id: Optional[str] = None) -> dict[str, str]:
+def sign_mock_webhook(secret: str, raw_body: bytes, transmission_id: str | None = None) -> dict[str, str]:
     """Headers a test or the dev simulator can send to the webhook endpoint in mock mode."""
     headers = {
         "paypal-transmission-id": transmission_id or _next_id("TX-"),
@@ -65,11 +66,11 @@ class MockPayPalGateway:
         self.vault_tokens: set[str] = set()
         self.invoices: dict[str, dict[str, Any]] = {}
         self._replay: dict[str, dict[str, Any]] = {}
-        self.calls: list[tuple[str, Optional[str]]] = []
+        self.calls: list[tuple[str, str | None]] = []
         # Fault injection for tests
-        self.next_capture_status: Optional[str] = None
-        self.next_capture_amount_value: Optional[str] = None
-        self.fail_next: Optional[PayPalError] = None
+        self.next_capture_status: str | None = None
+        self.next_capture_amount_value: str | None = None
+        self.fail_next: PayPalError | None = None
 
     async def aclose(self) -> None:
         return None
@@ -79,7 +80,7 @@ class MockPayPalGateway:
             err, self.fail_next = self.fail_next, None
             raise err
 
-    def _replayed(self, request_id: str) -> Optional[dict[str, Any]]:
+    def _replayed(self, request_id: str) -> dict[str, Any] | None:
         return self._replay.get(request_id)
 
     # ------------------------------------------------------------------ buyer simulation

@@ -9,7 +9,6 @@ right amount, recent enough), so no caller of the function can assert "consent h
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from packages.domain.fsm import POLICY_REFUND_STATES, can_transition, get_next_state
 from packages.domain.models import (
@@ -31,7 +30,7 @@ def _deny(reason: str, **metadata: object) -> GuardDecision:
 
 
 class Guard:
-    def __init__(self, policy: Optional[ShopPolicy] = None):
+    def __init__(self, policy: ShopPolicy | None = None):
         self.policy = policy or ShopPolicy()
 
     # ------------------------------------------------------------------ quotes
@@ -107,9 +106,9 @@ class Guard:
         current_state: OrderState,
         provided_quote_hash: str,
         current_quote: Quote,
-        mandate: Optional[VaultMandate],
-        consent: Optional[ConsentRecord],
-        step_up: Optional[StepUpRecord],
+        mandate: VaultMandate | None,
+        consent: ConsentRecord | None,
+        step_up: StepUpRecord | None,
         vault_charges_today: int,
         call_id: str,
         order_id: str,
