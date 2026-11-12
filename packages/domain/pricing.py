@@ -1,7 +1,8 @@
 """
 Pure pricing engine for COUNTER.
 Zero I/O, integer cents everywhere. No floating point numbers anywhere near money.
-Provides deterministic quote calculation, cryptographic quote hashing, and speech read-back generation.
+Provides deterministic quote calculation, a quote fingerprint (SHA-256 of the canonical cart),
+and the spoken read-back.
 """
 
 from __future__ import annotations
@@ -38,10 +39,9 @@ class MenuItemUnavailableError(PricingError):
 
 def format_cents(cents: int) -> str:
     """Format integer cents into a standard currency string (e.g. 1450 -> '$14.50')."""
-    dollars = cents // 100
-    remainder = abs(cents) % 100
     sign = "-" if cents < 0 else ""
-    return f"{sign}${abs(dollars)}.{remainder:02d}"
+    magnitude = abs(cents)
+    return f"{sign}${magnitude // 100}.{magnitude % 100:02d}"
 
 
 def compute_quote_hash(
@@ -53,9 +53,10 @@ def compute_quote_hash(
     secret_salt: str = "counter_quote_salt",
 ) -> str:
     """
-    Computes a deterministic cryptographic SHA-256 hash of the quote.
-    This guarantees that the exact cart and total read back to the caller
-    matches what is passed to PayPal during send_payment_link.
+    Fingerprint of the quote: SHA-256 over a canonical JSON encoding of the cart and totals.
+
+    It detects that the cart changed between the spoken read-back and the payment step. It is
+    an integrity check inside our own process, not a signature: it proves nothing to a third party.
     """
     canonical_lines = []
     # Sort lines deterministically by item_id and modifiers
@@ -125,7 +126,7 @@ def calculate_quote(
     """
     Pure deterministic pricing function.
     Calculates line totals, subtotal, tax (half-up integer rounding in bps), and total in integer cents.
-    Generates a cryptographic quote hash and spoken read-back.
+    Generates the quote fingerprint and spoken read-back.
     """
     if not cart:
         empty_hash = compute_quote_hash(shop_id, (), 0, 0, 0, secret_salt)

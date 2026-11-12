@@ -1,12 +1,11 @@
 """
-Domain models for COUNTER.
-Pure Python, zero I/O, deterministic types and schemas.
-All monetary values are strict integer cents. Floats are never permitted near money.
+Domain models for COUNTER. Pure Python, no I/O. Money is always integer cents.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
@@ -16,16 +15,26 @@ class OrderState(str, Enum):
     QUOTED = "QUOTED"
     LINK_SENT = "LINK_SENT"
     APPROVED = "APPROVED"
+    PAYMENT_PENDING = "PAYMENT_PENDING"  # capture exists but PayPal has not completed it
     CAPTURED = "CAPTURED"
     IN_KITCHEN = "IN_KITCHEN"
     READY = "READY"
     PICKED_UP = "PICKED_UP"
     CANCELLED = "CANCELLED"
     LINK_EXPIRED = "LINK_EXPIRED"
+    PAYMENT_DENIED = "PAYMENT_DENIED"
+    REVERSED = "REVERSED"  # chargeback / reversal after capture
+    NEEDS_REVIEW = "NEEDS_REVIEW"  # PayPal's view disagrees with ours; a human must look
     REFUNDED_FULL = "REFUNDED_FULL"
     REFUNDED_PARTIAL = "REFUNDED_PARTIAL"
     NO_SHOW = "NO_SHOW"
     CONFIRMED_CATERING = "CONFIRMED_CATERING"
+
+
+# States in which the kitchen may hold a ticket. PAYMENT_PENDING is deliberately absent.
+PAID_STATES = frozenset(
+    {OrderState.CAPTURED, OrderState.IN_KITCHEN, OrderState.READY, OrderState.PICKED_UP, OrderState.NO_SHOW}
+)
 
 
 class OrderAction(str, Enum):
@@ -34,13 +43,19 @@ class OrderAction(str, Enum):
     CHARGE_SAVED_PAYMENT = "charge_saved_payment"
     APPROVE = "approve"
     CAPTURE = "capture"
+    MARK_PAYMENT_PENDING = "mark_payment_pending"
+    DENY_PAYMENT = "deny_payment"
+    REVERSE = "reverse"
+    FLAG_REVIEW = "flag_review"
+    RESOLVE_REVIEW = "resolve_review"
     KITCHEN_ACCEPT = "kitchen_accept"
     MARK_READY = "mark_ready"
     PICKUP = "pickup"
     CANCEL = "cancel"
     EXPIRE = "expire"
     SWEEP_NO_SHOW = "sweep_no_show"
-    REFUND = "refund"
+    RECORD_FULL_REFUND = "record_full_refund"
+    RECORD_PARTIAL_REFUND = "record_partial_refund"
     CONFIRM_CATERING = "confirm_catering"
 
 
@@ -56,6 +71,13 @@ class ActorType(str, Enum):
     OWNER = "owner"
     SYSTEM = "system"
     PAYPAL = "paypal"
+    CALLER = "caller"
+
+
+class ConsentDecision(str, Enum):
+    YES = "yes"
+    NO = "no"
+    UNCLEAR = "unclear"
 
 
 @dataclass(frozen=True)
@@ -99,28 +121,46 @@ class MenuItem:
 
 @dataclass(frozen=True)
 class ShopPolicy:
-    cancel_full_refund_until_state: OrderState = OrderState.CAPTURED
-    partial_refund_pct: int = 50  # 50% partial refund when cancelled in kitchen
+    partial_refund_pct: int = 50
     link_ttl_min: int = 15
-    max_order_value_cents: int = 50000  # $500.00
-    refund_approval_threshold_cents: int = 2500  # $25.00
-    catering_threshold_cents: int = 20000  # $200.00
+    max_order_value_cents: int = 50000
+    refund_approval_threshold_cents: int = 2500
+    catering_threshold_cents: int = 20000
+    consent_max_age_seconds: int = 300
+    max_vault_charges_per_day: int = 3
 
 
 @dataclass(frozen=True)
 class VaultMandate:
-    """
-    Customer authorization to charge saved PayPal wallet on repeat phone calls.
-    Restricted to this restaurant only, with strict per-order spending ceiling.
-    """
+    """Customer authorisation to charge a saved PayPal wallet at one shop, up to a cap."""
+
     id: str
     vault_id: str
     customer_hash: str
     shop_id: str
-    max_charge_cents: int = 10000  # $100.00 default cap
-    status: str = "ACTIVE"  # "ACTIVE", "REVOKED"
-    revoke_token: str = ""
-    created_at_iso: str = ""
+    max_charge_cents: int = 10000
+    status: str = "ACTIVE"
+
+
+@dataclass(frozen=True)
+class ConsentRecord:
+    """A stored consent event: what was read to the caller and how their reply was classified."""
+
+    order_id: str
+    call_id: str
+    quote_hash: str
+    amount_cents: int
+    decision: ConsentDecision
+    recorded_at: datetime
+
+
+@dataclass(frozen=True)
+class StepUpRecord:
+    """A verified possession check (SMS one-time code) for one call and one mandate."""
+
+    call_id: str
+    mandate_id: str
+    verified_at: datetime
 
 
 @dataclass(frozen=True)
@@ -140,7 +180,7 @@ class Quote:
     shop_id: str
     lines: tuple[QuoteLine, ...]
     subtotal_cents: int
-    tax_rate_bps: int  # basis points (e.g. 825 = 8.25%)
+    tax_rate_bps: int
     tax_cents: int
     total_cents: int
     quote_hash: str

@@ -1,20 +1,22 @@
-"""
-Counter Domain Package.
-Contains pure, zero-I/O models, state machines, pricing engines, and guard policies.
-"""
+"""Counter domain package: pure, I/O-free models, state machine, pricing, consent and guard policy."""
 
+from packages.domain.consent import classify_consent, consent_prompt, quote_short_code
 from packages.domain.fsm import (
-    IllegalStateTransitionError,
+    POLICY_REFUND_STATES,
     TRANSITION_TABLE,
-    REFUND_TRANSITIONS,
+    IllegalStateTransitionError,
     can_transition,
     get_next_state,
     get_side_effects,
+    refund_action,
 )
 from packages.domain.guard import Guard
 from packages.domain.models import (
+    PAID_STATES,
     ActorType,
     CartItem,
+    ConsentDecision,
+    ConsentRecord,
     GuardDecision,
     GuardDecisionKind,
     MenuItem,
@@ -25,7 +27,16 @@ from packages.domain.models import (
     Quote,
     QuoteLine,
     ShopPolicy,
+    StepUpRecord,
     VaultMandate,
+)
+from packages.domain.money import (
+    AmountMismatchError,
+    MoneyError,
+    PayPalLine,
+    build_purchase_unit,
+    cents_to_value,
+    value_to_cents,
 )
 from packages.domain.pricing import (
     MenuItemNotFoundError,
@@ -36,10 +47,18 @@ from packages.domain.pricing import (
     format_cents,
     generate_spoken_readback,
 )
+from packages.domain.reconcile import CaptureOutcome, ReconcileResult, reconcile_capture
 
 __all__ = [
+    "PAID_STATES",
+    "POLICY_REFUND_STATES",
+    "TRANSITION_TABLE",
     "ActorType",
+    "AmountMismatchError",
+    "CaptureOutcome",
     "CartItem",
+    "ConsentDecision",
+    "ConsentRecord",
     "Guard",
     "GuardDecision",
     "GuardDecisionKind",
@@ -49,20 +68,30 @@ __all__ = [
     "MenuItemUnavailableError",
     "ModifierDefinition",
     "ModifierSelection",
+    "MoneyError",
     "OrderAction",
     "OrderState",
+    "PayPalLine",
     "PricingError",
     "Quote",
     "QuoteLine",
-    "REFUND_TRANSITIONS",
+    "ReconcileResult",
     "ShopPolicy",
-    "TRANSITION_TABLE",
+    "StepUpRecord",
     "VaultMandate",
+    "build_purchase_unit",
     "calculate_quote",
     "can_transition",
+    "cents_to_value",
+    "classify_consent",
     "compute_quote_hash",
+    "consent_prompt",
     "format_cents",
     "generate_spoken_readback",
     "get_next_state",
     "get_side_effects",
+    "quote_short_code",
+    "reconcile_capture",
+    "refund_action",
+    "value_to_cents",
 ]
