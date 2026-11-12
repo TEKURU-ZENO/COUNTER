@@ -26,7 +26,7 @@ from apps.worker.worker import CounterWorker
 from packages.paypal_gateway import MockPayPalGateway, sign_mock_webhook
 from tests.conftest import last_tool_result, login, start_call
 
-MARGHERITA = {"item": "item_pizza_margherita", "qty": 1, "modifiers": []}
+MARGHERITA = {"item_id": "item_pizza_margherita", "quantity": 1, "modifiers": []}
 
 
 def state_of(kwargs: dict[str, Any]) -> dict[str, Any]:

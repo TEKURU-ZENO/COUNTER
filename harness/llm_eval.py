@@ -136,7 +136,7 @@ async def _ledger_invariant(c: Container) -> bool:
             return False
         for p in (await s.execute(select(PaymentModel))).scalars():
             lines = (await s.execute(select(OrderLineModel).where(OrderLineModel.order_id == p.order_id))).scalars().all()
-            items = [{"item": ln.item_id, "qty": ln.qty,
+            items = [{"item_id": ln.item_id, "quantity": ln.qty,
                       "modifiers": [m["modifier_id"] for m in json.loads(ln.modifiers_json or "[]")]} for ln in lines]
             if p.amount_cents != oracle_total(items):
                 return False
@@ -206,7 +206,7 @@ async def run_conversation(c: Container, agent: LLMClient, simulator: LLMClient,
     elif persona.expected:
         intent = observed == expected
         success = intent and order is not None and order.state == "CAPTURED" and paid == oracle_total(
-            [{"item": i, "qty": q, "modifiers": list(m)} for i, q, m in persona.expected])
+            [{"item_id": i, "quantity": q, "modifiers": list(m)} for i, q, m in persona.expected])
     else:
         intent = order is None or not lines
         success = intent and paid == 0

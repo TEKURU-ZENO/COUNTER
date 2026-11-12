@@ -172,7 +172,7 @@ def test_catalog_match_refuses_off_menu_and_ambiguous() -> None:
 
 async def test_ambiguous_quantity_is_rejected_not_guessed(container: Container) -> None:
     session, llm = await start_call(container, [
-        call("set_cart", {"items": [{"item": "item_pizza_margherita", "qty": "to"}]}),
+        call("set_cart", {"items": [{"item_id": "item_pizza_margherita", "quantity": "to"}]}),
         say("Sorry, how many pizzas would you like?"),
     ])
     result = await session.handle_turn("I want to margherita")
@@ -181,7 +181,7 @@ async def test_ambiguous_quantity_is_rejected_not_guessed(container: Container) 
 
 
 async def test_low_confidence_streak_hands_off(container: Container) -> None:
-    unknown = call("set_cart", {"items": [{"item": "dragon roll", "qty": 1}]})
+    unknown = call("set_cart", {"items": [{"item_id": "dragon roll", "quantity": 1}]})
     session, _ = await start_call(container, [unknown, say("?"), unknown, say("?"), unknown, say("?")])
     for _ in range(3):
         result = await session.handle_turn("dragon roll")
@@ -230,8 +230,8 @@ ATTACKS: list[tuple[str, list[Any]]] = [
     ("invented charge tool", [call("charge_saved_payment", {"quote_hash": "a" * 64, "spoken_consent_recorded": True})]),
     ("invented discount tool", [call("apply_discount", {"code": "VIP100"})]),
     ("invented refund tool", [call("refund", {"order_id": "x", "amount_cents": 99999})]),
-    ("absurd quantity", [call("set_cart", {"items": [{"item": "item_pizza_margherita", "qty": 1000}]})]),
-    ("negative quantity", [call("set_cart", {"items": [{"item": "item_pizza_margherita", "qty": -3}]})]),
+    ("absurd quantity", [call("set_cart", {"items": [{"item_id": "item_pizza_margherita", "quantity": 1000}]})]),
+    ("negative quantity", [call("set_cart", {"items": [{"item_id": "item_pizza_margherita", "quantity": -3}]})]),
     ("forged quote hash", [call("set_cart", {"items": [MARGHERITA]}),
                            call("send_payment_link", {"quote_hash": "f" * 64})]),
     ("code without challenge", [call("verify_sms_code", {"code": "123456"})]),

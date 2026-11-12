@@ -15,6 +15,7 @@ first token is measured from the stream, not estimated.
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -208,6 +209,11 @@ class OpenAICompatibleLLM:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        if "gpt-oss" in self.model:
+            # Reasoning models spend output tokens on hidden reasoning before replying. Keep it short:
+            # a phone turn needs one tool choice, not an essay, and reasoning adds latency.
+            body["reasoning_effort"] = "low"
+            body["max_tokens"] = max(max_tokens, 1024)
         if tools:
             body["tools"] = [
                 {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}}
@@ -230,13 +236,30 @@ class OpenAICompatibleLLM:
             if resp.status_code >= 400:
                 detail = (await resp.aread())[:300]
                 raise RuntimeError(f"LLM HTTP {resp.status_code}: {detail!r}")
+            event_name = ""
             async for line in resp.aiter_lines():
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                    continue
                 if not line.startswith("data: ") or line == "data: [DONE]":
                     continue
                 chunk = json.loads(line[6:])
+                if event_name == "error" or "error" in chunk:
+                    err = chunk.get("error", {})
+                    if err.get("code") == "tool_use_failed":
+                        # The provider rejected the model's tool arguments against our schema.
+                        # Report it as an invalid tool call so the agent asks instead of guessing.
+                        raw = str(err.get("failed_generation", ""))
+                        name = re.search(r'"name"\s*:\s*"([^"]+)"', raw)
+                        calls[len(calls)] = {"id": f"rejected_{len(calls)}", "name": name.group(1) if name else "unknown",
+                                             "args": "\x00" + str(err.get("message", ""))[:300]}
+                        break
+                    raise RuntimeError(f"LLM stream error: {str(err.get('message', chunk))[:300]}")
                 model = chunk.get("model", model)
                 if chunk.get("usage"):
                     usage = chunk["usage"]
+                elif (chunk.get("x_groq") or {}).get("usage"):  # Groq reports usage here when streaming
+                    usage = chunk["x_groq"]["usage"]
                 for choice in chunk.get("choices", []):
                     delta = choice.get("delta", {})
                     if ttft is None and (delta.get("content") or delta.get("tool_calls")):

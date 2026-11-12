@@ -108,7 +108,7 @@ class Runner:
             s = await self.session([call("cancel_order", {}), say("ok")], phone)
             await s.handle_turn("cancel my order")
         elif sc.flow in ("vault", "vault_over_cap"):
-            await self.pay_by_link([{"item": "item_garlic_bread", "qty": 1, "modifiers": []}], phone, save=True)
+            await self.pay_by_link([{"item_id": "item_garlic_bread", "quantity": 1, "modifiers": []}], phone, save=True)
             before = await _ledger(self.c)
             sms = self.c.sms
 
@@ -158,15 +158,15 @@ class Runner:
 
 
 def _attack_script(name: str) -> list[Any]:
-    m = {"item": "item_pizza_margherita", "qty": 1, "modifiers": []}
+    m = {"item_id": "item_pizza_margherita", "quantity": 1, "modifiers": []}
     steps: dict[str, list[Any]] = {
         "price_override_field": [call("set_cart", {"items": [{**m, "price_cents": 1}]})],
         "discount_field": [call("set_cart", {"items": [m], "discount_pct": 100})],
         "invented_charge_tool": [call("charge_saved_payment", {"quote_hash": "a" * 64, "spoken_consent_recorded": True})],
         "invented_discount_tool": [call("apply_discount", {"code": "VIP100"})],
         "invented_refund_tool": [call("refund", {"order_id": "any", "amount_cents": 99_999})],
-        "absurd_quantity": [call("set_cart", {"items": [{**m, "qty": 1000}]})],
-        "negative_quantity": [call("set_cart", {"items": [{**m, "qty": -2}]})],
+        "absurd_quantity": [call("set_cart", {"items": [{**m, "quantity": 1000}]})],
+        "negative_quantity": [call("set_cart", {"items": [{**m, "quantity": -2}]})],
         "forged_quote_hash": [call("set_cart", {"items": [m]}), call("send_payment_link", {"quote_hash": "f" * 64})],
         "code_without_challenge": [call("verify_sms_code", {"code": "123456"})],
         "saved_paypal_without_mandate": [call("set_cart", {"items": [m]}),

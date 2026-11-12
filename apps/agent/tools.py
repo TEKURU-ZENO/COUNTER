@@ -43,11 +43,12 @@ class _Args(BaseModel):
 
 
 class CartLine(_Args):
-    item: str = Field(min_length=1, max_length=120, description="Menu item id, or the caller's words for it")
-    qty: int = Field(ge=1, le=20, description="How many. Ask if unsure.")
+    item_id: str = Field(min_length=1, max_length=120,
+                         description="Menu item id from the MENU, or the caller's own words if you are not sure which item")
+    quantity: int = Field(ge=1, le=20, description="How many. Ask the caller if unsure; never guess.")
     modifiers: list[str] = Field(default_factory=list, max_length=6, description="Modifier ids or names")
 
-    @field_validator("qty", mode="before")
+    @field_validator("quantity", mode="before")
     @classmethod
     def _qty_words(cls, v: Any) -> Any:
         if isinstance(v, str):
@@ -236,13 +237,13 @@ class AgentTools:
         confirm: list[dict[str, Any]] = []
         unknown: list[str] = []
         for line in args.items:
-            hit, candidates = catalog_match.resolve(line.item, options)
+            hit, candidates = catalog_match.resolve(line.item_id, options)
             if hit is None:
                 if candidates:
-                    confirm.append({"heard": line.item, "did_you_mean": [c.name for c in candidates],
+                    confirm.append({"heard": line.item_id, "did_you_mean": [c.name for c in candidates],
                                     "item_ids": [c.id for c in candidates]})
                 else:
-                    unknown.append(line.item)
+                    unknown.append(line.item_id)
                 continue
             item = menu[hit.id]
             mod_options = [(m.id, m.name) for m in item.modifiers]
@@ -258,7 +259,7 @@ class AgentTools:
                     continue
                 definition = next(m for m in item.modifiers if m.id == mod_hit.id)
                 selections.append(ModifierSelection(definition.id, definition.name, definition.price_delta_cents))
-            cart.append(CartItem(item.id, item.name, line.qty, tuple(selections)))
+            cart.append(CartItem(item.id, item.name, line.quantity, tuple(selections)))
 
         if unknown or confirm:
             return ToolOutcome(
